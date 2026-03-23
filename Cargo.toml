@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "TraderBackend trait and implementations for SNN signal processing: RustBackend (native), ZmqBrainBackend (Julia IPC), NeroManifoldSnapshot packet parsing"
+repository = "https://github.com/rmems/spikenaut-backend"
 keywords = ["snn", "backend", "zmq", "neuromorphic", "spikenaut"]
 categories = ["science", "network-programming", "hardware-support"]
+exclude = ["docs/"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
