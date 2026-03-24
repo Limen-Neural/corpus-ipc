@@ -11,6 +11,13 @@
 //! Also includes [`NeroManifoldSnapshot`] — the 4-neuromodulator snapshot
 //! packet parsed from the Julia brain's 88-byte NERO IPC frame.
 //!
+//! ## Provenance
+//!
+//! Extracted from Eagle-Lander, the author's own private neuromorphic GPU supervisor
+//! repository (closed-source). The backend abstraction layer connected a Rust SNN
+//! to a Julia CUDA brain via ZMQ IPC in production before being open-sourced as a
+//! standalone crate.
+//!
 //! ## References
 //!
 //! **NERO scoring (Neuromorphic Evaluation of Relevance and Orchestration):**
