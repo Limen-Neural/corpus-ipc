@@ -4,7 +4,9 @@
 
 use crate::{BackendError, GpuTelemetry, TraderBackend};
 
-const READOUT_IPC: &str = "ipc:///tmp/spikenaut_readout.ipc";
+/// Default ZeroMQ IPC endpoint for receiving NERO packets.
+/// Can be overridden via environment variable `SPIKENAUT_ZMQ_READOUT_IPC`.
+const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/spikenaut_readout.ipc";
 
 struct SafeSocket {
     socket: zmq::Socket,
@@ -149,14 +151,15 @@ impl TraderBackend for ZmqBrainBackend {
             .map_err(|e| BackendError::InitializationError(
                 format!("ZMQ rcvhwm: {e}")
             ))?;
-        socket.connect(READOUT_IPC)
+        let endpoint = std::env::var("SPIKENAUT_ZMQ_READOUT_IPC").unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
+        socket.connect(&endpoint)
             .map_err(|e| BackendError::InitializationError(format!(
-                "ZMQ connect to {READOUT_IPC}: {e} (is main_brain.jl running?)"
+                "ZMQ connect to {}: {} (is main_brain.jl running?)", endpoint, e
             )))?;
 
         self.sub_socket = Some(SafeSocket { socket });
         self.initialized = true;
-        println!("[zmq-brain] Connected to Julia Brain at {READOUT_IPC}");
+        println!("[zmq-brain] Connected to Julia Brain at {}", endpoint);
         Ok(())
     }
 
