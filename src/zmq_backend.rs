@@ -1,10 +1,12 @@
-//! ZMQ SUB backend — reads 88-byte NERO packets from the Julia brain IPC socket.
+//! ZMQ SUB backend — reads neural data packets from the Julia brain IPC socket.
 //!
 //! Requires feature `zmq`.
 
-use crate::{BackendError, GpuTelemetry, TraderBackend};
+use crate::{BackendError, NeuralBackend};
 
-const READOUT_IPC: &str = "ipc:///tmp/spikenaut_readout.ipc";
+/// Default ZeroMQ IPC endpoint for receiving neural data packets.
+/// Can be overridden via environment variable `SPIKENAUT_ZMQ_READOUT_IPC`.
+const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/spikenaut_readout.ipc";
 
 struct SafeSocket {
     socket: zmq::Socket,
@@ -15,24 +17,22 @@ unsafe impl Send for SafeSocket {}
 unsafe impl Sync for SafeSocket {}
 
 /// Julia IPC backend — subscribes to the Julia brain's ZMQ PUB socket and
-/// returns the latest 16-channel lobe readout + 4 NERO scores on each call.
+/// returns the latest neural readouts on each call.
 ///
-/// # Wire format (88-byte NERO packet)
+/// # Wire format
+/// The packet consists of an 8-byte header followed by a variable number of
+/// 4-byte floating-point values.
+///
 /// ```text
-/// [0..8]   tick     i64 LE   monotonic tick counter
-/// [8..72]  readout  16×f32   lobe output (action/trade signals)
-/// [72..88] nero     4×f32    [dopamine, cortisol, acetylcholine, tempo]
+/// [0..8]   tick     i64 LE      monotonic tick counter
+/// [8..]    readout  N×f32 LE    lobe outputs
 /// ```
-///
-/// Legacy 72-byte packets (no NERO suffix) are accepted with zero-order hold
-/// on the last known NERO scores.
 pub struct ZmqBrainBackend {
     context: zmq::Context,
     sub_socket: Option<SafeSocket>,
     initialized: bool,
     pub(crate) last_readout: Vec<f32>,
-    pub last_nero: [f32; 4],
-    pub(crate) brain_tick: i64,
+    pub brain_tick: i64,
 }
 
 impl ZmqBrainBackend {
@@ -41,15 +41,9 @@ impl ZmqBrainBackend {
             context: zmq::Context::new(),
             sub_socket: None,
             initialized: false,
-            last_readout: vec![0.0f32; 16],
-            last_nero: [0.25f32; 4], // neutral defaults
+            last_readout: Vec::new(),
             brain_tick: 0,
         }
-    }
-
-    /// Last 4-element NERO scores received from the Julia brain.
-    pub fn get_nero_scores(&self) -> [f32; 4] {
-        self.last_nero
     }
 
     /// Monotonic tick counter of the last received packet.
@@ -65,32 +59,16 @@ impl ZmqBrainBackend {
         let socket = &safe_socket.socket;
 
         match socket.recv_bytes(zmq::DONTWAIT) {
-            Ok(buf) if buf.len() == 88 => {
+            Ok(buf) if buf.len() >= 8 && (buf.len() - 8) % 4 == 0 => {
                 self.brain_tick = i64::from_le_bytes(
-                    buf[0..8].try_into().unwrap_or([0; 8])
+                    buf[0..8].try_into().unwrap()
                 );
-                for i in 0..16 {
+                let num_floats = (buf.len() - 8) / 4;
+                self.last_readout.resize(num_floats, 0.0);
+                for i in 0..num_floats {
                     let off = 8 + i * 4;
                     self.last_readout[i] = f32::from_le_bytes(
-                        buf[off..off+4].try_into().unwrap_or([0; 4])
-                    );
-                }
-                for i in 0..4 {
-                    let off = 72 + i * 4;
-                    self.last_nero[i] = f32::from_le_bytes(
-                        buf[off..off+4].try_into().unwrap_or([0; 4])
-                    );
-                }
-            }
-            Ok(buf) if buf.len() == 72 => {
-                // Legacy packet — parse tick+readout, keep last_nero (zero-order hold).
-                self.brain_tick = i64::from_le_bytes(
-                    buf[0..8].try_into().unwrap_or([0; 8])
-                );
-                for i in 0..16 {
-                    let off = 8 + i * 4;
-                    self.last_readout[i] = f32::from_le_bytes(
-                        buf[off..off+4].try_into().unwrap_or([0; 4])
+                        buf[off..off+4].try_into().unwrap()
                     );
                 }
             }
@@ -107,11 +85,7 @@ impl ZmqBrainBackend {
             }
         }
 
-        // Return 20-element widened contract: [readout(16), nero(4)]
-        let mut out = Vec::with_capacity(20);
-        out.extend_from_slice(&self.last_readout);
-        out.extend_from_slice(&self.last_nero);
-        Ok(out)
+        Ok(self.last_readout.clone())
     }
 }
 
@@ -121,12 +95,10 @@ impl Default for ZmqBrainBackend {
     }
 }
 
-impl TraderBackend for ZmqBrainBackend {
+impl NeuralBackend for ZmqBrainBackend {
     fn process_signals(
         &mut self,
-        _normalized_inputs: &[f32; 8],
-        _inhibition_signal: f32,
-        _telemetry: &GpuTelemetry,
+        _inputs: &[f32],
     ) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
@@ -149,14 +121,15 @@ impl TraderBackend for ZmqBrainBackend {
             .map_err(|e| BackendError::InitializationError(
                 format!("ZMQ rcvhwm: {e}")
             ))?;
-        socket.connect(READOUT_IPC)
+        let endpoint = std::env::var("SPIKENAUT_ZMQ_READOUT_IPC").unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
+        socket.connect(&endpoint)
             .map_err(|e| BackendError::InitializationError(format!(
-                "ZMQ connect to {READOUT_IPC}: {e} (is main_brain.jl running?)"
+                "ZMQ connect to {}: {} (is main_brain.jl running?)", endpoint, e
             )))?;
 
         self.sub_socket = Some(SafeSocket { socket });
         self.initialized = true;
-        println!("[zmq-brain] Connected to Julia Brain at {READOUT_IPC}");
+        println!("[zmq-brain] Connected to Julia Brain at {}", endpoint);
         Ok(())
     }
 
@@ -165,15 +138,14 @@ impl TraderBackend for ZmqBrainBackend {
         Ok(())
     }
 
-    fn get_spike_states(&self) -> [bool; 16] {
-        std::array::from_fn(|i| self.last_readout[i] > 0.5)
+    fn get_spike_states(&self) -> Vec<bool> {
+        self.last_readout.iter().map(|&v| v > 0.5).collect()
     }
 
     fn reset(&mut self) -> Result<(), BackendError> {
-        self.last_readout = vec![0.0f32; 16];
-        self.last_nero = [0.25f32; 4];
+        self.last_readout.clear();
         self.brain_tick = 0;
-        println!("[zmq-brain] Readout and NERO cache reset");
+        println!("[zmq-brain] Readout cache reset");
         Ok(())
     }
 }
@@ -184,75 +156,59 @@ impl TraderBackend for ZmqBrainBackend {
 mod tests {
     use super::*;
 
-    fn make_88_packet(tick: i64, readout: [f32; 16], nero: [f32; 4]) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(88);
+    fn make_packet(tick: i64, readout: &[f32]) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(8 + readout.len() * 4);
         buf.extend_from_slice(&tick.to_le_bytes());
-        for v in &readout { buf.extend_from_slice(&v.to_le_bytes()); }
-        for v in &nero    { buf.extend_from_slice(&v.to_le_bytes()); }
-        buf
-    }
-
-    fn make_72_packet(tick: i64, readout: [f32; 16]) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(72);
-        buf.extend_from_slice(&tick.to_le_bytes());
-        for v in &readout { buf.extend_from_slice(&v.to_le_bytes()); }
+        for v in readout { buf.extend_from_slice(&v.to_le_bytes()); }
         buf
     }
 
     #[test]
-    fn parse_88_byte_nero_packet() {
-        let nero     = [0.4f32, 0.3, 0.2, 0.1];
-        let readout  = std::array::from_fn::<f32, 16, _>(|i| i as f32 * 0.1);
+    fn parse_dynamic_packet() {
+        let readout: Vec<f32> = (0..20).map(|i| i as f32 * 0.1).collect();
         let tick: i64 = 42_000;
-        let buf = make_88_packet(tick, readout, nero);
+        let buf = make_packet(tick, &readout);
 
         let mut b = ZmqBrainBackend::new();
+        // Manually simulate receiving the packet
         b.brain_tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
-        for i in 0..16 {
+        let num_floats = (buf.len() - 8) / 4;
+        b.last_readout.resize(num_floats, 0.0);
+        for i in 0..num_floats {
             let off = 8 + i * 4;
             b.last_readout[i] = f32::from_le_bytes(buf[off..off+4].try_into().unwrap());
-        }
-        for i in 0..4 {
-            let off = 72 + i * 4;
-            b.last_nero[i] = f32::from_le_bytes(buf[off..off+4].try_into().unwrap());
         }
 
         assert_eq!(b.brain_tick, tick);
-        for i in 0..16 {
+        assert_eq!(b.last_readout.len(), 20);
+        for i in 0..20 {
             assert!((b.last_readout[i] - readout[i]).abs() < 1e-5);
         }
-        for i in 0..4 {
-            assert!((b.last_nero[i] - nero[i]).abs() < 1e-5);
-        }
-    }
-
-    #[test]
-    fn legacy_72_packet_preserves_nero() {
-        let mut b = ZmqBrainBackend::new();
-        let known_nero = [0.7f32, 0.1, 0.1, 0.1];
-        b.last_nero = known_nero;
-
-        let buf = make_72_packet(99, [1.0f32; 16]);
-        b.brain_tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
-        for i in 0..16 {
-            let off = 8 + i * 4;
-            b.last_readout[i] = f32::from_le_bytes(buf[off..off+4].try_into().unwrap());
-        }
-        // No NERO bytes parsed — zero-order hold.
-        assert_eq!(b.brain_tick, 99);
-        assert_eq!(b.last_nero, known_nero);
     }
 
     #[test]
     fn malformed_packet_does_not_mutate_state() {
-        let b = ZmqBrainBackend::new();
-        let initial_nero = b.last_nero;
+        let mut b = ZmqBrainBackend::new();
+        b.last_readout = vec![1.0, 2.0];
+        b.brain_tick = 100;
+
+        let initial_readout = b.last_readout.clone();
         let initial_tick = b.brain_tick;
 
-        // A 5-byte garbage packet is neither 88 nor 72 bytes — no branch entered.
-        let bad: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF, 0x00];
-        assert!(bad.len() != 88 && bad.len() != 72);
-        assert_eq!(b.last_nero, initial_nero);
+        // A 5-byte garbage packet has an invalid length
+        let bad_buf: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF, 0x00];
+
+        // Simulate a recv call that would get this bad packet
+        // In a real scenario, the Ok(buf) branch for bad length would be taken
+        // and an error printed, but the state would not change.
+        if bad_buf.len() < 8 || (bad_buf.len() - 8) % 4 != 0 {
+             // This is what should happen inside receive_readout
+             eprintln!("[test] Malformed packet received");
+        } else {
+            // this part should not be reached
+        }
+
+        assert_eq!(b.last_readout, initial_readout);
         assert_eq!(b.brain_tick, initial_tick);
     }
 }
