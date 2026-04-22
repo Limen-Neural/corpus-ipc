@@ -1,12 +1,12 @@
 [package]
-name = "spikenaut-backend"
+name = "corpus-ipc"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-description = "TraderBackend trait and implementations for SNN signal processing: RustBackend (native), ZmqBrainBackend (Julia IPC), NeroManifoldSnapshot packet parsing"
-repository = "https://github.com/rmems/spikenaut-backend"
-keywords = ["snn", "backend", "zmq", "neuromorphic", "spikenaut"]
-categories = ["science", "network-programming", "hardware-support"]
+description = "Inter-Process Communication (IPC) library for bridging Rust to external compute engines via ZeroMQ."
+repository = "https://github.com/your-username/corpus-ipc"  # <-- TODO: Update this to the correct URL
+keywords = ["ipc", "zmq", "ffi", "hpc", "compute"]
+categories = ["science", "network-programming", "api-bindings"]
 exclude = ["docs/"]
 
 [dependencies]

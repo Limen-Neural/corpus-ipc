@@ -1,4 +1,4 @@
-//! Axum-based microservice exposing the `spikenaut-backend` crate as a REST API.
+//! Axum-based microservice exposing the `corpus-ipc` crate as a REST API.
 
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -11,12 +11,12 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use spikenaut_backend::{
-    BackendError, BackendType, GpuTelemetry, TraderBackend,
+use corpus_ipc::{
+    BackendError, BackendType, NeuralBackend,
 };
-use spikenaut_backend::trait_def::BackendFactory;
+use corpus_ipc::trait_def::BackendFactory;
 
-type SharedBackend = Arc<Mutex<Box<dyn TraderBackend>>>;
+type SharedBackend = Arc<Mutex<Box<dyn NeuralBackend>>>;
 
 #[tokio::main]
 async fn main() {
@@ -27,7 +27,7 @@ async fn main() {
             { BackendType::ZmqBrain }
             #[cfg(not(feature = "zmq"))]
             {
-                eprintln!("[spikenaut-service] 'zmq' backend requested but crate was built without 'zmq' feature; falling back to Rust backend");
+                eprintln!("[corpus-ipc-service] 'zmq' backend requested but crate was built without 'zmq' feature; falling back to Rust backend");
                 BackendType::Rust
             }
         }
@@ -51,7 +51,7 @@ async fn main() {
         .parse()
         .expect("invalid bind address");
 
-    println!("[spikenaut-service] listening on {addr}");
+    println!("[corpus-ipc-service] listening on {addr}");
     let listener = TcpListener::bind(addr).await.expect("bind failed");
     axum::serve(listener, app.into_make_service())
         .await
@@ -67,9 +67,7 @@ struct InitializeReq {
 
 #[derive(Debug, Deserialize)]
 struct ProcessReq {
-    normalized_inputs: [f32; 8],
-    inhibition_signal: f32,
-    telemetry: GpuTelemetry,
+    inputs: Vec<f32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -104,7 +102,7 @@ async fn process(
     Json(payload): Json<ProcessReq>,
 ) -> Result<Json<ProcessRes>, Json<SimpleRes>> {
     let mut be = backend.lock().unwrap();
-    match be.process_signals(&payload.normalized_inputs, payload.inhibition_signal, &payload.telemetry) {
+    match be.process_signals(&payload.inputs) {
         Ok(out) => Ok(Json(ProcessRes { output: out })),
         Err(e) => Err(Json(SimpleRes { ok: false, message: e.to_string() })),
     }

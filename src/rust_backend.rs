@@ -1,11 +1,11 @@
 //! Pure-Rust native backend — no external dependencies.
 
-use crate::{BackendError, GpuTelemetry, TraderBackend};
+use crate::{BackendError, NeuralBackend};
 
 /// Rust-native SNN backend.
 ///
-/// Implements a simple push-pull encoding: each of the 8 input channels is
-/// split into a bull/bear pair. Channel `i` → `output[i*2]` (positive),
+/// Implements a simple push-pull encoding: each input channel is split
+/// into a positive/negative pair. Channel `i` → `output[i*2]` (positive),
 /// channel `i` → `output[i*2+1]` (negative magnitude).
 ///
 /// Useful as a smoke-test stub and software fallback when Julia / ZMQ is
@@ -26,12 +26,10 @@ impl Default for RustBackend {
     }
 }
 
-impl TraderBackend for RustBackend {
+impl NeuralBackend for RustBackend {
     fn process_signals(
         &mut self,
-        normalized_inputs: &[f32; 8],
-        _inhibition_signal: f32,
-        _telemetry: &GpuTelemetry,
+        inputs: &[f32],
     ) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
@@ -40,9 +38,9 @@ impl TraderBackend for RustBackend {
         }
 
         // Push-pull encoding: positive → bull channel; negative → bear channel.
-        let mut output = vec![0.0f32; 16];
-        for i in 0..8 {
-            let val = normalized_inputs[i];
+        let mut output = vec![0.0f32; inputs.len() * 2];
+        for i in 0..inputs.len() {
+            let val = inputs[i];
             if val > 0.0 {
                 output[i * 2]     = val;
                 output[i * 2 + 1] = 0.0;
@@ -63,8 +61,9 @@ impl TraderBackend for RustBackend {
         Ok(()) // no state to persist
     }
 
-    fn get_spike_states(&self) -> [bool; 16] {
-        [false; 16]
+    fn get_spike_states(&self) -> Vec<bool> {
+        // This backend is stateless, so it always returns an empty Vec.
+        Vec::new()
     }
 
     fn reset(&mut self) -> Result<(), BackendError> {
@@ -77,21 +76,18 @@ impl TraderBackend for RustBackend {
 mod tests {
     use super::*;
 
-    fn make_telem() -> GpuTelemetry { GpuTelemetry::default() }
-
     #[test]
     fn process_before_init_returns_error() {
         let mut b = RustBackend::new();
-        assert!(b.process_signals(&[0.0; 8], 0.0, &make_telem()).is_err());
+        assert!(b.process_signals(&[0.0; 4]).is_err());
     }
 
     #[test]
     fn positive_input_goes_to_bull_channel() {
         let mut b = RustBackend::new();
         b.initialize(None).unwrap();
-        let mut inputs = [0.0f32; 8];
-        inputs[0] = 0.8;
-        let out = b.process_signals(&inputs, 0.0, &make_telem()).unwrap();
+        let inputs = vec![0.8, 0.0, 0.0];
+        let out = b.process_signals(&inputs).unwrap();
         assert!((out[0] - 0.8).abs() < 1e-5);
         assert_eq!(out[1], 0.0);
     }
@@ -100,24 +96,25 @@ mod tests {
     fn negative_input_goes_to_bear_channel() {
         let mut b = RustBackend::new();
         b.initialize(None).unwrap();
-        let mut inputs = [0.0f32; 8];
-        inputs[2] = -0.5;
-        let out = b.process_signals(&inputs, 0.0, &make_telem()).unwrap();
+        let inputs = vec![0.0, 0.0, -0.5];
+        let out = b.process_signals(&inputs).unwrap();
         assert_eq!(out[4], 0.0);          // bull channel for ch2
         assert!((out[5] - 0.5).abs() < 1e-5); // bear channel
     }
 
     #[test]
-    fn output_has_16_elements() {
+    fn output_has_double_the_elements() {
         let mut b = RustBackend::new();
         b.initialize(None).unwrap();
-        let out = b.process_signals(&[0.1; 8], 0.0, &make_telem()).unwrap();
+        let out = b.process_signals(&[0.1; 8]).unwrap();
         assert_eq!(out.len(), 16);
+        let out_5 = b.process_signals(&[0.1; 5]).unwrap();
+        assert_eq!(out_5.len(), 10);
     }
 
     #[test]
-    fn spike_states_all_false() {
+    fn spike_states_is_empty() {
         let b = RustBackend::new();
-        assert_eq!(b.get_spike_states(), [false; 16]);
+        assert!(b.get_spike_states().is_empty());
     }
 }

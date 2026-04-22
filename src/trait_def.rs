@@ -1,8 +1,8 @@
-//! `TraderBackend` trait and `BackendType` enumeration.
+//! `NeuralBackend` trait and `BackendType` enumeration.
 
-use crate::{BackendError, GpuTelemetry, RustBackend};
+use crate::{BackendError, RustBackend};
 
-/// Unified interface for SNN signal processing backends.
+/// Unified interface for neural processing backends.
 ///
 /// Abstracts over the neural processing layer, allowing different backend
 /// implementations (Rust-native, Julia jlrs, ZMQ IPC) to be used
@@ -10,27 +10,16 @@ use crate::{BackendError, GpuTelemetry, RustBackend};
 ///
 /// # Output contract
 ///
-/// `process_signals` returns a `Vec<f32>`:
-///
-/// - Most backends return **16 elements** — one per lobe/neuron readout.
-/// - [`ZmqBrainBackend`](crate::ZmqBrainBackend) returns **20 elements**:
-///   `[0..16]` lobe readout, `[16..20]` NERO scores
-///   `[dopamine, cortisol, acetylcholine, tempo]`.
-///
-/// Callers that only need the readout should index `output[..16]` and access
-/// extended fields via `output.get(i).copied().unwrap_or(0.0)`.
-pub trait TraderBackend: Send + Sync {
-    /// Process 8-channel normalised market signals through the SNN.
+/// `process_signals` returns a `Vec<f32>` containing the processed outputs.
+/// The exact number of elements depends on the backend implementation.
+pub trait NeuralBackend: Send + Sync {
+    /// Process a dynamic slice of input signals through the neural backend.
     ///
     /// # Arguments
-    /// - `normalized_inputs` — 8 Z-scored market signal channels
-    /// - `inhibition_signal` — thermal inhibition scalar (GPU temperature proxy)
-    /// - `telemetry` — live GPU telemetry for neuromodulation
+    /// - `inputs` — A dynamically sized slice of `f32` input signals.
     fn process_signals(
         &mut self,
-        normalized_inputs: &[f32; 8],
-        inhibition_signal: f32,
-        telemetry: &GpuTelemetry,
+        inputs: &[f32],
     ) -> Result<Vec<f32>, BackendError>;
 
     /// Initialise backend (load model weights, connect to IPC socket, etc.).
@@ -42,7 +31,7 @@ pub trait TraderBackend: Send + Sync {
     fn save_state(&self, model_path: &str) -> Result<(), BackendError>;
 
     /// Return per-neuron spike states (true = spiked on last tick).
-    fn get_spike_states(&self) -> [bool; 16];
+    fn get_spike_states(&self) -> Vec<bool>;
 
     /// Reset internal network state (membrane potentials, caches).
     fn reset(&mut self) -> Result<(), BackendError>;
@@ -59,11 +48,11 @@ pub enum BackendType {
     ZmqBrain,
 }
 
-/// Factory for creating `TraderBackend` instances.
+/// Factory for creating `NeuralBackend` instances.
 pub struct BackendFactory;
 
 impl BackendFactory {
-    pub fn create(backend_type: BackendType) -> Box<dyn TraderBackend> {
+    pub fn create(backend_type: BackendType) -> Box<dyn NeuralBackend> {
         match backend_type {
             BackendType::Rust => Box::new(RustBackend::new()),
             #[cfg(feature = "zmq")]
