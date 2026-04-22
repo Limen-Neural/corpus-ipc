@@ -16,9 +16,12 @@ pub mod models;
 pub mod zmq_backend;
 
 pub use error::BackendError;
-pub use trait_def::{NeuralBackend, BackendType};
+pub use trait_def::{BackendType, HybridFlowBackend, NeuralBackend};
 pub use rust_backend::RustBackend;
-pub use models::NeroManifoldSnapshot;
+pub use models::{
+    BatchMetadata, ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate,
+    NeroManifoldSnapshot, SpikeBatch, SpikeEvent, SpineMessage, TraceBatch, TraceData,
+};
 
 #[cfg(feature = "zmq")]
 pub use zmq_backend::ZmqBrainBackend;

@@ -1,6 +1,8 @@
 //! `NeuralBackend` trait and `BackendType` enumeration.
 
-use crate::{BackendError, RustBackend};
+use crate::{
+    BackendError, EmbeddingBatch, GradientBatch, RustBackend, SpikeBatch, TraceBatch,
+};
 
 /// Unified interface for neural processing backends.
 ///
@@ -35,6 +37,24 @@ pub trait NeuralBackend: Send + Sync {
 
     /// Reset internal network state (membrane potentials, caches).
     fn reset(&mut self) -> Result<(), BackendError>;
+}
+
+/// Optional high-level hybrid flow interface for message-oriented IPC backends.
+///
+/// Backends that support structured spike/embedding exchange can implement this
+/// trait in addition to `NeuralBackend`.
+pub trait HybridFlowBackend: Send + Sync {
+    /// Send a spike batch over the transport.
+    fn send_spikes(&mut self, spikes: SpikeBatch) -> Result<(), BackendError>;
+
+    /// Send an embedding batch over the transport.
+    fn send_embeddings(&mut self, embeddings: EmbeddingBatch) -> Result<(), BackendError>;
+
+    /// Try receiving a gradient batch without blocking.
+    fn try_receive_gradients(&mut self) -> Result<Option<GradientBatch>, BackendError>;
+
+    /// Try receiving an eligibility trace batch without blocking.
+    fn try_receive_traces(&mut self) -> Result<Option<TraceBatch>, BackendError>;
 }
 
 /// Backend implementation selector.
