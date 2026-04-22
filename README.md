@@ -32,7 +32,8 @@ corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc" }
 ## Quick Start
 
 ```rust
-use corpus_ipc::{BackendFactory, BackendType, NeuralBackend};
+use corpus_ipc::{BackendType, NeuralBackend};
+use corpus_ipc::trait_def::BackendFactory;
 
 let mut backend = BackendFactory::create(BackendType::Rust);
 backend.initialize(None)?;
