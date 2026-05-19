@@ -21,7 +21,7 @@ type SharedBackend = Arc<Mutex<Box<dyn NeuralBackend>>>;
 #[tokio::main]
 async fn main() {
     // Select backend type via env var; default to Rust.
-    let backend_type = match std::env::var("SPIKENAUT_BACKEND_TYPE").as_deref() {
+    let backend_type = match std::env::var("CORPUS_IPC_BACKEND_TYPE").as_deref() {
         Ok("zmq") => {
             #[cfg(feature = "zmq")]
             { BackendType::ZmqBrain }
@@ -46,7 +46,7 @@ async fn main() {
         .layer(Extension(backend));
 
     // Bind address (0.0.0.0:8080 by default).
-    let addr: SocketAddr = std::env::var("SPIKENAUT_BIND")
+    let addr: SocketAddr = std::env::var("CORPUS_IPC_BIND")
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
         .parse()
         .expect("invalid bind address");
