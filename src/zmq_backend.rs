@@ -4,7 +4,7 @@
 //!
 //! Requires feature `zmq`.
 
-use crate::{BackendError, NeuralBackend};
+use crate::{BackendError, BackendConnector};
 
 /// Default ZeroMQ IPC endpoint for receiving neural data packets.
 /// Can be overridden via environment variable `CORPUS_IPC_ZMQ_READOUT_IPC`.
@@ -93,7 +93,7 @@ impl Default for ZmqBrainBackend {
     }
 }
 
-impl NeuralBackend for ZmqBrainBackend {
+impl BackendConnector for ZmqBrainBackend {
     fn process_signals(&mut self, _inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
@@ -104,6 +104,9 @@ impl NeuralBackend for ZmqBrainBackend {
     }
 
     fn initialize(&mut self, _model_path: Option<&str>) -> Result<(), BackendError> {
+        if self.initialized {
+            return Ok(());
+        }
         let socket = self
             .context
             .socket(zmq::SUB)

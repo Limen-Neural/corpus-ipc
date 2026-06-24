@@ -2,7 +2,7 @@
 
 //! Pure-Rust native backend — no external dependencies.
 
-use crate::{BackendError, NeuralBackend};
+use crate::{BackendError, BackendConnector};
 
 /// Rust-native SNN backend.
 ///
@@ -28,7 +28,7 @@ impl Default for RustBackend {
     }
 }
 
-impl NeuralBackend for RustBackend {
+impl BackendConnector for RustBackend {
     fn process_signals(&mut self, inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(

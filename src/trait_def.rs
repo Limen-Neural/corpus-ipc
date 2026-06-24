@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! `NeuralBackend` trait and `BackendType` enumeration.
+//! `BackendConnector` trait and `BackendType` enumeration.
 
 use crate::{BackendError, EmbeddingBatch, GradientBatch, RustBackend, SpikeBatch, TraceBatch};
 
@@ -14,7 +14,7 @@ use crate::{BackendError, EmbeddingBatch, GradientBatch, RustBackend, SpikeBatch
 ///
 /// `process_signals` returns a `Vec<f32>` containing the processed outputs.
 /// The exact number of elements depends on the backend implementation.
-pub trait NeuralBackend: Send + Sync {
+pub trait BackendConnector: Send + Sync {
     /// Process a dynamic slice of input signals through the neural backend.
     ///
     /// # Arguments
@@ -39,7 +39,7 @@ pub trait NeuralBackend: Send + Sync {
 /// Optional high-level hybrid flow interface for message-oriented IPC backends.
 ///
 /// Backends that support structured spike/embedding exchange can implement this
-/// trait in addition to `NeuralBackend`.
+/// trait in addition to `BackendConnector`.
 pub trait HybridFlowBackend: Send + Sync {
     /// Send a spike batch over the transport.
     fn send_spikes(&mut self, spikes: SpikeBatch) -> Result<(), BackendError>;
@@ -65,11 +65,11 @@ pub enum BackendType {
     ZmqBrain,
 }
 
-/// Factory for creating `NeuralBackend` instances.
+/// Factory for creating `BackendConnector` instances.
 pub struct BackendFactory;
 
 impl BackendFactory {
-    pub fn create(backend_type: BackendType) -> Box<dyn NeuralBackend> {
+    pub fn create(backend_type: BackendType) -> Box<dyn BackendConnector> {
         match backend_type {
             BackendType::Rust => Box::new(RustBackend::new()),
             #[cfg(feature = "zmq")]

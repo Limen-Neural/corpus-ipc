@@ -23,7 +23,7 @@ pub use models::{
     NeroManifoldSnapshot, SpikeBatch, SpikeEvent, SpineMessage, TraceBatch, TraceData,
 };
 pub use rust_backend::RustBackend;
-pub use trait_def::{BackendType, HybridFlowBackend, NeuralBackend};
+pub use trait_def::{BackendType, HybridFlowBackend, BackendConnector};
 
 #[cfg(feature = "zmq")]
 pub use zmq_backend::ZmqBrainBackend;

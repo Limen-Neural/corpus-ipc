@@ -60,7 +60,7 @@ The following names currently leak legacy naming into the generic IPC surface (v
 1. `NeroManifoldSnapshot` model type and re-export.
 2. `ZmqBrainBackend` backend naming (`Brain` is product/domain-coded wording).
 3. `SpineMessage` naming (biological/product-coded framing instead of neutral IPC envelope terms).
-4. `process_signals` in `NeuralBackend` trait method (domain-coded behavior wording).
+4. `process_signals` in `BackendConnector` trait method (domain-coded behavior wording).
 
 **Note on service/entrypoint rename (this PR):** The service binary (`src/bin/corpus_ipc_server.rs`), env var names (`CORPUS_IPC_BACKEND_TYPE`, `CORPUS_IPC_BIND`, `CORPUS_IPC_ZMQ_READOUT_IPC`), and default endpoint were hard-renamed with no legacy aliases kept in this implementation pass. The items above (1-4) remain for subsequent type/trait migration stages. Downstream consumers (e.g. Julia publishers) and deployment configs must migrate to the new names/default path.
 
@@ -80,7 +80,7 @@ Target API shape for a generic runtime/IPC core:
 
 Representative naming direction (non-binding planning examples):
 
-- `NeuralBackend` -> `RuntimeBackend`
+- `BackendConnector` (was NeuralBackend) -> `RuntimeBackend`
 - `process_signals` -> `process_batch` (or equivalent neutral verb)
 - `SpineMessage` -> `RuntimeMessage` / `Envelope`
 - `ZmqBrainBackend` -> `ZmqRuntimeBackend`

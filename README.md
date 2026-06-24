@@ -8,7 +8,7 @@ Inter-Process Communication (IPC) library for bridging Rust to external compute 
 
 ## Features
 
-- `NeuralBackend` trait for backend-agnostic signal processing
+- `BackendConnector` trait for backend-agnostic signal processing (was NeuralBackend)
 - `RustBackend` reference backend (always available)
 - `ZmqBrainBackend` backend via ZMQ SUB socket (feature `zmq`)
 - Canonical protocol models:
@@ -34,7 +34,7 @@ corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc" }
 ## Quick Start
 
 ```rust
-use corpus_ipc::{BackendType, NeuralBackend};
+use corpus_ipc::{BackendType, BackendConnector};
 use corpus_ipc::trait_def::BackendFactory;
 
 let mut backend = BackendFactory::create(BackendType::Rust);
@@ -60,7 +60,7 @@ use corpus_ipc::{SpineMessage, SpikeBatch, EmbeddingBatch};
 ## Crate Exports
 
 - Backends and traits:
-  - `NeuralBackend`, `HybridFlowBackend`
+  - `BackendConnector`, `HybridFlowBackend`
   - `BackendType`
   - `RustBackend`
   - `ZmqBrainBackend` (when `zmq` feature enabled)
