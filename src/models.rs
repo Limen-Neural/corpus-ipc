@@ -170,8 +170,8 @@ pub struct ConfigPayload {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum ConfigValue {
-    Float(f32),
     Integer(u64),
+    Float(f32),
     String(String),
     Boolean(bool),
     FloatArray(Vec<f32>),

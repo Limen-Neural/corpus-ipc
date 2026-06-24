@@ -66,7 +66,6 @@ The following names currently leak legacy naming into the generic IPC surface (v
 
 Additional cleanup targets discovered in metadata/docs (deferred to later stage; not changed in this PR's service/entrypoint rename pass):
 
-- `Cargo.toml` TODO note in repository field.
 - README references to neural/hybrid-specific naming in public API lists.
 
 ## Public API target (planning)
