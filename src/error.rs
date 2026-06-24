@@ -2,7 +2,7 @@
 
 //! Backend error type.
 
-/// Errors that may be returned by any `BackendConnector` implementation (generic equivalent of the former TraderBackend).
+/// Errors that may be returned by any `BackendConnector` implementation.
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
     #[error("Initialization failed: {0}")]
