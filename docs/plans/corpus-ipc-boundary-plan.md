@@ -40,14 +40,14 @@ To ensure the plan is grounded in the actual crate surface, this revision explic
 - `src/models.rs`
 - `src/zmq_backend.rs`
 - `src/rust_backend.rs`
-- `src/bin/spikenaut_server.rs`
+- `src/bin/corpus_ipc_server.rs`
 - `Cargo.toml`
 - `README.md`
 
 Observation:
 
 - **No direct `TraderBackend` symbol is present** in the current source tree.
-- Legacy/domain wording still appears through neural/brain/spine/NERO/spikenaut terminology in public traits, exported models, backend names, env vars, and service binary naming.
+- Legacy/domain wording still appears through neural/brain/spine/NERO terminology in public traits, exported models, backend names, env vars, and service binary naming.
 
 ## Legacy wording inventory
 
@@ -57,11 +57,11 @@ The following names currently leak legacy naming into the generic IPC surface (v
 2. `ZmqBrainBackend` backend naming (`Brain` is product/domain-coded wording).
 3. `SpineMessage` naming (biological/product-coded framing instead of neutral IPC envelope terms).
 4. `process_signals` in `NeuralBackend` trait method (domain-coded behavior wording).
-5. `spikenaut_server` binary target naming (legacy app-specific wording).
-6. `SPIKENAUT_BACKEND_TYPE` environment variable in `src/bin/spikenaut_server.rs`.
-7. `SPIKENAUT_BIND` environment variable in `src/bin/spikenaut_server.rs`.
-8. `SPIKENAUT_ZMQ_READOUT_IPC` environment variable in `src/zmq_backend.rs`.
-9. `ipc:///tmp/spikenaut_readout.ipc` default endpoint constant in `src/zmq_backend.rs`.
+5. ~~`corpus_ipc_server` binary target naming~~ — renamed from legacy app-specific wording.
+6. ~~`CORPUS_IPC_BACKEND_TYPE` environment variable~~ — renamed from legacy env var.
+7. ~~`CORPUS_IPC_BIND` environment variable~~ — renamed from legacy env var.
+8. ~~`CORPUS_IPC_ZMQ_READOUT_IPC` environment variable~~ — renamed from legacy env var.
+9. ~~`ipc:///tmp/corpus_ipc_readout.ipc` default endpoint~~ — renamed from legacy endpoint.
 
 Additional cleanup targets discovered in metadata/docs:
 
@@ -114,7 +114,7 @@ Boundary rule:
 ## Proposed migration sequence (planning only)
 
 1. Approve boundary + naming matrix in issue #3.
-2. Finalize neutral terminology map (old -> new) and compatibility policy, including **all `SPIKENAUT_*` env vars and default endpoint strings**.
+2. Finalize neutral terminology map (old -> new) and compatibility policy, including **all legacy env vars and default endpoint strings** (now migrated to `CORPUS_IPC_*`).
 3. Stage non-breaking docs and type alias/deprecation pass.
 4. Execute major rename pass with release notes and downstream coordination.
 5. Remove deprecated legacy names after agreed window.

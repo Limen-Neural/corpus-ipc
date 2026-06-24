@@ -5,7 +5,7 @@
 use crate::{BackendError, NeuralBackend};
 
 /// Default ZeroMQ IPC endpoint for receiving neural data packets.
-/// Override with `CORPUS_IPC_ZMQ_READOUT_IPC`, or legacy `SPIKENAUT_ZMQ_READOUT_IPC`.
+/// Can be overridden via environment variable `CORPUS_IPC_ZMQ_READOUT_IPC`.
 const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/corpus_ipc_readout.ipc";
 
 struct SafeSocket {
@@ -102,25 +102,23 @@ impl NeuralBackend for ZmqBrainBackend {
     }
 
     fn initialize(&mut self, _model_path: Option<&str>) -> Result<(), BackendError> {
-        let socket = self
-            .context
-            .socket(zmq::SUB)
-            .map_err(|e| BackendError::InitializationError(format!("ZMQ SUB socket: {e}")))?;
-        socket
-            .set_subscribe(b"")
-            .map_err(|e| BackendError::InitializationError(format!("ZMQ subscribe: {e}")))?;
-        socket
-            .set_rcvhwm(16)
-            .map_err(|e| BackendError::InitializationError(format!("ZMQ rcvhwm: {e}")))?;
-        let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC")
-            .or_else(|_| std::env::var("SPIKENAUT_ZMQ_READOUT_IPC"))
-            .unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
-        socket.connect(&endpoint).map_err(|e| {
-            BackendError::InitializationError(format!(
-                "ZMQ connect to {}: {} (is the IPC producer running?)",
-                endpoint, e
-            ))
-        })?;
+        let socket = self.context.socket(zmq::SUB)
+            .map_err(|e| BackendError::InitializationError(
+                format!("ZMQ SUB socket: {e}")
+            ))?;
+        socket.set_subscribe(b"")
+            .map_err(|e| BackendError::InitializationError(
+                format!("ZMQ subscribe: {e}")
+            ))?;
+        socket.set_rcvhwm(16)
+            .map_err(|e| BackendError::InitializationError(
+                format!("ZMQ rcvhwm: {e}")
+            ))?;
+        let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC").unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
+        socket.connect(&endpoint)
+            .map_err(|e| BackendError::InitializationError(format!(
+                "ZMQ connect to {}: {} (is the IPC producer running?)", endpoint, e
+            )))?;
 
         self.sub_socket = Some(SafeSocket { socket });
         self.initialized = true;
