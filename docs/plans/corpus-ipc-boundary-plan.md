@@ -2,7 +2,7 @@
 
 - Linear issue: LIM-10
 - GitHub tracking: https://github.com/Limen-Neural/corpus-ipc/issues/3
-- Status: planning only (no implementation changes)
+- Status: implementation in progress
 
 ## Purpose
 
