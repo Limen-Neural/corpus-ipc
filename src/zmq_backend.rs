@@ -5,8 +5,8 @@
 use crate::{BackendError, NeuralBackend};
 
 /// Default ZeroMQ IPC endpoint for receiving neural data packets.
-/// Can be overridden via environment variable `SPIKENAUT_ZMQ_READOUT_IPC`.
-const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/spikenaut_readout.ipc";
+/// Can be overridden via environment variable `CORPUS_IPC_ZMQ_READOUT_IPC`.
+const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/corpus_ipc_readout.ipc";
 
 struct SafeSocket {
     socket: zmq::Socket,
@@ -121,7 +121,7 @@ impl NeuralBackend for ZmqBrainBackend {
             .map_err(|e| BackendError::InitializationError(
                 format!("ZMQ rcvhwm: {e}")
             ))?;
-        let endpoint = std::env::var("SPIKENAUT_ZMQ_READOUT_IPC").unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
+        let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC").unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
         socket.connect(&endpoint)
             .map_err(|e| BackendError::InitializationError(format!(
                 "ZMQ connect to {}: {} (is main_brain.jl running?)", endpoint, e
