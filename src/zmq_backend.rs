@@ -6,7 +6,7 @@ use crate::{BackendError, NeuralBackend};
 
 /// Default ZeroMQ IPC endpoint for receiving neural data packets.
 /// Override with `CORPUS_IPC_ZMQ_READOUT_IPC`, or legacy `SPIKENAUT_ZMQ_READOUT_IPC`.
-const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/spikenaut_readout.ipc";
+const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/corpus_ipc_readout.ipc";
 
 struct SafeSocket {
     socket: zmq::Socket,
