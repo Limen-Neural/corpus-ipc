@@ -31,7 +31,6 @@ Define the target boundary for `corpus-ipc` as a reusable runtime/IPC crate that
 - Product-domain branding vocabulary in core trait/type names.
 - Cross-repo business semantics that are not required for generic IPC/runtime boundaries.
 
-
 ## Source audit performed (this revision)
 
 To ensure the plan is grounded in the actual crate surface, this revision explicitly reviewed the current Rust sources:
