@@ -115,7 +115,6 @@ impl NeuralBackend for ZmqBrainBackend {
                 format!("ZMQ rcvhwm: {e}")
             ))?;
         let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC")
-            .or_else(|_| std::env::var("SPIKENAUT_ZMQ_READOUT_IPC"))
             .unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
         socket.connect(&endpoint)
             .map_err(|e| BackendError::InitializationError(format!(

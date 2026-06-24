@@ -57,11 +57,8 @@ The following names currently leak legacy naming into the generic IPC surface (v
 2. `ZmqBrainBackend` backend naming (`Brain` is product/domain-coded wording).
 3. `SpineMessage` naming (biological/product-coded framing instead of neutral IPC envelope terms).
 4. `process_signals` in `NeuralBackend` trait method (domain-coded behavior wording).
-5. ~~`corpus_ipc_server` binary target naming~~ — renamed from legacy app-specific wording.
-6. ~~`CORPUS_IPC_BACKEND_TYPE` environment variable~~ — renamed from legacy env var.
-7. ~~`CORPUS_IPC_BIND` environment variable~~ — renamed from legacy env var.
-8. ~~`CORPUS_IPC_ZMQ_READOUT_IPC` environment variable~~ — renamed from legacy env var.
-9. ~~`ipc:///tmp/corpus_ipc_readout.ipc` default endpoint~~ — renamed from legacy endpoint.
+
+**Note on service/entrypoint rename (this PR):** The service binary (`src/bin/corpus_ipc_server.rs`), env var names (`CORPUS_IPC_BACKEND_TYPE`, `CORPUS_IPC_BIND`, `CORPUS_IPC_ZMQ_READOUT_IPC`), and default endpoint were hard-renamed with no legacy aliases kept in this implementation pass. The items above (1-4) remain for subsequent type/trait migration stages. Downstream consumers (e.g. Julia publishers) and deployment configs must migrate to the new names/default path.
 
 Additional cleanup targets discovered in metadata/docs:
 
@@ -103,6 +100,7 @@ Boundary rule:
 2. **Serialization compatibility**: renaming message/type fields could impact existing consumers if wire schema changes.
 3. **Documentation drift**: README and usage examples can become stale during staged renaming.
 4. **Feature split ambiguity**: unclear separation between pure schema crate and runtime transport crate may create churn.
+5. **Service binary/env/default hard rename**: This PR executed a hard cutover for the server binary target name, env var keys, and ZMQ default path (no legacy fallbacks in code). Deployment scripts, Dockerfiles, systemd units, CI, and external publishers (e.g. using old default IPC path or prior env var names) must be updated concurrently. Cargo bin target implicitly changes from old filename-based name to `corpus_ipc_server`.
 
 ## Open questions
 
