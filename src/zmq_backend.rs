@@ -5,8 +5,8 @@
 use crate::{BackendError, NeuralBackend};
 
 /// Default ZeroMQ IPC endpoint for receiving neural data packets.
-/// Can be overridden via environment variable `SPIKENAUT_ZMQ_READOUT_IPC`.
-const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/spikenaut_readout.ipc";
+/// Can be overridden via environment variable `CORPUS_IPC_ZMQ_READOUT_IPC`.
+const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/corpus_ipc_readout.ipc";
 
 struct SafeSocket {
     socket: zmq::Socket,
@@ -52,28 +52,24 @@ impl ZmqBrainBackend {
     }
 
     fn receive_readout(&mut self) -> Result<Vec<f32>, BackendError> {
-        let safe_socket = self.sub_socket.as_ref()
-            .ok_or_else(|| BackendError::CommunicationError(
-                "SUB socket not connected".to_string()
-            ))?;
+        let safe_socket = self.sub_socket.as_ref().ok_or_else(|| {
+            BackendError::CommunicationError("SUB socket not connected".to_string())
+        })?;
         let socket = &safe_socket.socket;
 
         match socket.recv_bytes(zmq::DONTWAIT) {
             Ok(buf) if buf.len() >= 8 && (buf.len() - 8) % 4 == 0 => {
-                self.brain_tick = i64::from_le_bytes(
-                    buf[0..8].try_into().unwrap()
-                );
+                self.brain_tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
                 let num_floats = (buf.len() - 8) / 4;
                 self.last_readout.resize(num_floats, 0.0);
                 for i in 0..num_floats {
                     let off = 8 + i * 4;
-                    self.last_readout[i] = f32::from_le_bytes(
-                        buf[off..off+4].try_into().unwrap()
-                    );
+                    self.last_readout[i] =
+                        f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
                 }
             }
             Ok(buf) => {
-                eprintln!("[zmq-brain] Unexpected packet size: {} bytes", buf.len());
+                eprintln!("[zmq-ipc] Unexpected packet size: {} bytes", buf.len());
             }
             Err(zmq::Error::EAGAIN) => {
                 // No new packet available — return cached readout.
@@ -96,10 +92,7 @@ impl Default for ZmqBrainBackend {
 }
 
 impl NeuralBackend for ZmqBrainBackend {
-    fn process_signals(
-        &mut self,
-        _inputs: &[f32],
-    ) -> Result<Vec<f32>, BackendError> {
+    fn process_signals(&mut self, _inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
                 "ZmqBrainBackend not initialized — call initialize() first".to_string(),
@@ -121,20 +114,21 @@ impl NeuralBackend for ZmqBrainBackend {
             .map_err(|e| BackendError::InitializationError(
                 format!("ZMQ rcvhwm: {e}")
             ))?;
-        let endpoint = std::env::var("SPIKENAUT_ZMQ_READOUT_IPC").unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
+        let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC")
+            .unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
         socket.connect(&endpoint)
             .map_err(|e| BackendError::InitializationError(format!(
-                "ZMQ connect to {}: {} (is main_brain.jl running?)", endpoint, e
+                "ZMQ connect to {}: {} (is the IPC producer running?)", endpoint, e
             )))?;
 
         self.sub_socket = Some(SafeSocket { socket });
         self.initialized = true;
-        println!("[zmq-brain] Connected to Julia Brain at {}", endpoint);
+        println!("[zmq-ipc] Connected to IPC producer at {}", endpoint);
         Ok(())
     }
 
     fn save_state(&self, _model_path: &str) -> Result<(), BackendError> {
-        println!("[zmq-brain] State lives in the Julia Brain process (CUDA VRAM)");
+        println!("[zmq-ipc] State lives in the external compute process (CUDA VRAM)");
         Ok(())
     }
 
@@ -145,7 +139,7 @@ impl NeuralBackend for ZmqBrainBackend {
     fn reset(&mut self) -> Result<(), BackendError> {
         self.last_readout.clear();
         self.brain_tick = 0;
-        println!("[zmq-brain] Readout cache reset");
+        println!("[zmq-ipc] Readout cache reset");
         Ok(())
     }
 }
@@ -159,7 +153,9 @@ mod tests {
     fn make_packet(tick: i64, readout: &[f32]) -> Vec<u8> {
         let mut buf = Vec::with_capacity(8 + readout.len() * 4);
         buf.extend_from_slice(&tick.to_le_bytes());
-        for v in readout { buf.extend_from_slice(&v.to_le_bytes()); }
+        for v in readout {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
         buf
     }
 
@@ -176,7 +172,7 @@ mod tests {
         b.last_readout.resize(num_floats, 0.0);
         for i in 0..num_floats {
             let off = 8 + i * 4;
-            b.last_readout[i] = f32::from_le_bytes(buf[off..off+4].try_into().unwrap());
+            b.last_readout[i] = f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
         }
 
         assert_eq!(b.brain_tick, tick);
@@ -202,8 +198,8 @@ mod tests {
         // In a real scenario, the Ok(buf) branch for bad length would be taken
         // and an error printed, but the state would not change.
         if bad_buf.len() < 8 || (bad_buf.len() - 8) % 4 != 0 {
-             // This is what should happen inside receive_readout
-             eprintln!("[test] Malformed packet received");
+            // This is what should happen inside receive_readout
+            eprintln!("[test] Malformed packet received");
         } else {
             // this part should not be reached
         }

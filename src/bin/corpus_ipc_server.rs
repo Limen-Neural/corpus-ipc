@@ -1,30 +1,28 @@
 //! Axum-based microservice exposing the `corpus-ipc` crate as a REST API.
 
 use std::net::SocketAddr;
-use tokio::net::TcpListener;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio::net::TcpListener;
 
-use axum::{
-    extract::Extension,
-    routing::post,
-    Json, Router,
-};
-use serde::{Deserialize, Serialize};
-use corpus_ipc::{
-    BackendError, BackendType, NeuralBackend,
-};
+use axum::{extract::Extension, routing::post, Json, Router};
 use corpus_ipc::trait_def::BackendFactory;
+use corpus_ipc::{BackendError, BackendType, NeuralBackend};
+use serde::{Deserialize, Serialize};
 
 type SharedBackend = Arc<Mutex<Box<dyn NeuralBackend>>>;
 
 #[tokio::main]
 async fn main() {
-    // Select backend type via env var; default to Rust.
-    let backend_type = match std::env::var("SPIKENAUT_BACKEND_TYPE").as_deref() {
+    // Select backend type via env var (CORPUS_IPC_BACKEND_TYPE); default to Rust.
+    // Hard rename pass for service entrypoint - legacy fallback not kept
+    // per cleanup goals (addresses bot feedback on rename completeness).
+    let backend_type = match std::env::var("CORPUS_IPC_BACKEND_TYPE").as_deref() {
         Ok("zmq") => {
             #[cfg(feature = "zmq")]
-            { BackendType::ZmqBrain }
+            {
+                BackendType::ZmqBrain
+            }
             #[cfg(not(feature = "zmq"))]
             {
                 eprintln!("[corpus-ipc-service] 'zmq' backend requested but crate was built without 'zmq' feature; falling back to Rust backend");
@@ -46,7 +44,8 @@ async fn main() {
         .layer(Extension(backend));
 
     // Bind address (0.0.0.0:8080 by default).
-    let addr: SocketAddr = std::env::var("SPIKENAUT_BIND")
+    // Hard rename pass: only CORPUS_IPC_BIND used (legacy fallback removed per goals).
+    let addr: SocketAddr = std::env::var("CORPUS_IPC_BIND")
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
         .parse()
         .expect("invalid bind address");
@@ -104,7 +103,10 @@ async fn process(
     let mut be = backend.lock().unwrap();
     match be.process_signals(&payload.inputs) {
         Ok(out) => Ok(Json(ProcessRes { output: out })),
-        Err(e) => Err(Json(SimpleRes { ok: false, message: e.to_string() })),
+        Err(e) => Err(Json(SimpleRes {
+            ok: false,
+            message: e.to_string(),
+        })),
     }
 }
 
@@ -127,7 +129,13 @@ async fn reset(Extension(backend): Extension<SharedBackend>) -> Json<SimpleRes> 
 
 fn reply(res: Result<(), BackendError>, success_msg: &str) -> Json<SimpleRes> {
     match res {
-        Ok(_) => Json(SimpleRes { ok: true, message: success_msg.into() }),
-        Err(e) => Json(SimpleRes { ok: false, message: e.to_string() }),
+        Ok(_) => Json(SimpleRes {
+            ok: true,
+            message: success_msg.into(),
+        }),
+        Err(e) => Json(SimpleRes {
+            ok: false,
+            message: e.to_string(),
+        }),
     }
 }
