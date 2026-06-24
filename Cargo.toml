@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
 [package]
 name = "corpus-ipc"
 version = "0.1.0"
 edition = "2024"
-license = "GPL-3.0-or-later"
+license = "MIT OR Apache-2.0"
 description = "Inter-Process Communication (IPC) library for bridging Rust to external compute engines via ZeroMQ."
-repository = "https://github.com/Limen-Neural/corpus-ipc"  # <-- TODO: Update this to the correct URL
+repository = "https://github.com/Limen-Neural/corpus-ipc"
 keywords = ["ipc", "zmq", "ffi", "hpc", "compute"]
 categories = ["science", "network-programming", "api-bindings"]
 exclude = ["docs/"]
