@@ -47,7 +47,8 @@ To ensure the plan is grounded in the actual crate surface, this revision explic
 
 Observation:
 
-- No `TraderBackend` type, trait, or public API symbol remains (a stale doc comment referencing it exists at `src/error.rs:3`: `/// Errors that may be returned by any `TraderBackend` implementation.`). The source audit list has been expanded to include `src/error.rs`.
+- No `TraderBackend` type, trait, or public API symbol remains.
+- A stale doc comment referencing it exists at `src/error.rs:3` (`/// Errors that may be returned by any `TraderBackend` implementation.`). The source audit list has been expanded to include `src/error.rs`.
 - Legacy/domain wording still appears through neural/brain/spine/NERO terminology in public traits, exported models, backend names, env vars, and service binary naming.
 
 ## Legacy wording inventory
