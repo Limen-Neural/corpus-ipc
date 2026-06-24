@@ -2,7 +2,7 @@
 
 //! Pure-Rust native backend — no external dependencies.
 
-use crate::{BackendError, BackendConnector};
+use crate::{BackendConnector, BackendError};
 
 /// Rust-native SNN backend.
 ///

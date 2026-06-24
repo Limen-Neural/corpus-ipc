@@ -4,7 +4,7 @@
 //!
 //! Requires feature `zmq`.
 
-use crate::{BackendError, BackendConnector};
+use crate::{BackendConnector, BackendError};
 
 /// Default ZeroMQ IPC endpoint for receiving neural data packets.
 /// Can be overridden via environment variable `CORPUS_IPC_ZMQ_READOUT_IPC`.
