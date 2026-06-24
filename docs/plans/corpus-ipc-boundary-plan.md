@@ -1,7 +1,7 @@
 # corpus-ipc runtime boundary cleanup plan
 
 - Linear issue: LIM-10
-- GitHub tracking: https://github.com/Limen-Neural/corpus-ipc/issues/3
+- GitHub tracking: <https://github.com/Limen-Neural/corpus-ipc/issues/3>
 - Status: implementation in progress
 
 ## Purpose
