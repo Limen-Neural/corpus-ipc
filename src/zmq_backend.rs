@@ -68,7 +68,7 @@ impl ZmqBrainBackend {
         let socket = &safe_socket.socket;
 
         match socket.recv_bytes(zmq::DONTWAIT) {
-            Ok(buf) if buf.len() >= 8 && (buf.len() - 8).is_multiple_of(4) => {
+            Ok(buf) if buf.len() >= 8 && (buf.len() - 8) % 4 == 0 => {
                 self.brain_tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
                 let num_floats = (buf.len() - 8) / 4;
                 self.last_readout.resize(num_floats, 0.0);
@@ -233,7 +233,7 @@ mod tests {
         // Simulate a recv call that would get this bad packet
         // In a real scenario, the Ok(buf) branch for bad length would be taken
         // and an error printed, but the state would not change.
-        if bad_buf.len() < 8 || !(bad_buf.len() - 8).is_multiple_of(4) {
+        if bad_buf.len() < 8 || (bad_buf.len() - 8) % 4 != 0 {
             // This is what should happen inside receive_readout
             eprintln!("[test] Malformed packet received");
         } else {

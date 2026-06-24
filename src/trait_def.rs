@@ -33,6 +33,12 @@ pub trait BackendConnector: Send + Sync {
     fn get_spike_states(&self) -> Vec<bool>;
 
     /// Reset internal network state (membrane potentials, caches).
+    ///
+    /// For connection-oriented backends (e.g. ZMQ), this may also drop the
+    /// transport socket and clear the initialized flag, requiring a subsequent
+    /// call to `initialize()` before the next `process_signals()`. Callers
+    /// should treat `reset()` + `process_signals()` without re-initialization
+    /// as potentially requiring re-connection for such backends.
     fn reset(&mut self) -> Result<(), BackendError>;
 }
 

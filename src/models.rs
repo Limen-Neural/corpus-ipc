@@ -198,6 +198,11 @@ pub enum ConfigValue {
     Integer(u64),
 
     /// String value.
+    ///
+    /// Allows string-valued config (e.g. mode names, paths) in `ConfigPayload::config`.
+    String(String),
+
+    /// Boolean value.
     Boolean(bool),
     FloatArray(Vec<f32>),
 }
