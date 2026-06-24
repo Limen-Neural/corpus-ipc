@@ -17,11 +17,14 @@ pub mod trait_def;
 #[cfg(feature = "zmq")]
 pub mod zmq_backend;
 
+/// Re-export the main error type.
 pub use error::BackendError;
+/// Re-export all public data models used on the wire.
 pub use models::{
     BatchMetadata, ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate,
     NeroManifoldSnapshot, SpikeBatch, SpikeEvent, SpineMessage, TraceBatch, TraceData,
 };
+/// Re-export the core trait and factory.
 pub use rust_backend::RustBackend;
 pub use trait_def::{BackendConnector, BackendType, HybridFlowBackend};
 

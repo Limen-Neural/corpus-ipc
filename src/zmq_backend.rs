@@ -38,6 +38,11 @@ pub struct ZmqBrainBackend {
 }
 
 impl ZmqBrainBackend {
+    /// Create a new uninitialized ZMQ backend.
+    ///
+    /// Socket and subscription are established only on the first successful
+    /// `initialize` call. Safe to construct even when the `zmq` feature is
+    /// enabled but the external publisher is not yet running.
     pub fn new() -> Self {
         Self {
             context: zmq::Context::new(),
@@ -49,6 +54,9 @@ impl ZmqBrainBackend {
     }
 
     /// Monotonic tick counter of the last received packet.
+    ///
+    /// Updated on every successful `receive_readout` (inside `process_signals`).
+    /// Useful for consumers that want to observe freshness without side effects.
     pub fn brain_tick(&self) -> i64 {
         self.brain_tick
     }
@@ -94,6 +102,13 @@ impl Default for ZmqBrainBackend {
 }
 
 impl BackendConnector for ZmqBrainBackend {
+    /// Process a dynamic slice of input signals through the neural backend.
+    ///
+    /// For ZMQ this ignores the `inputs` (the backend is a readout subscriber)
+    /// and returns the latest packet or cached value.
+    ///
+    /// # Errors
+    /// Returns `InitializationError` if the SUB socket is not connected.
     fn process_signals(&mut self, _inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
@@ -103,6 +118,10 @@ impl BackendConnector for ZmqBrainBackend {
         self.receive_readout()
     }
 
+    /// Initialise the ZMQ SUB socket and connect to the readout endpoint.
+    ///
+    /// Endpoint may be overridden by `CORPUS_IPC_ZMQ_READOUT_IPC`.
+    /// Idempotent: second call is a no-op once connected.
     fn initialize(&mut self, _model_path: Option<&str>) -> Result<(), BackendError> {
         if self.initialized {
             return Ok(());
@@ -132,15 +151,20 @@ impl BackendConnector for ZmqBrainBackend {
         Ok(())
     }
 
+    /// Persist current model state (delegated to remote if supported).
+    /// Current ZMQ implementation is read-only; this is a no-op.
     fn save_state(&self, _model_path: &str) -> Result<(), BackendError> {
         println!("[zmq-ipc] State lives in the external compute process (CUDA VRAM)");
         Ok(())
     }
 
+    /// Return last known spike states from the remote brain.
+    /// ZMQ path currently returns empty (readout is scalar vector, not spikes).
     fn get_spike_states(&self) -> Vec<bool> {
         self.last_readout.iter().map(|&v| v > 0.5).collect()
     }
 
+    /// Reset cached readout state. Does not affect the remote process.
     fn reset(&mut self) -> Result<(), BackendError> {
         self.last_readout.clear();
         self.brain_tick = 0;

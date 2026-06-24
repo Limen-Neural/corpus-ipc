@@ -17,6 +17,7 @@ pub struct RustBackend {
 }
 
 impl RustBackend {
+    /// Construct and return a fresh `RustBackend` in the uninitialized state.
     pub fn new() -> Self {
         Self { initialized: false }
     }
