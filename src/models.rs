@@ -170,8 +170,11 @@ pub struct ConfigPayload {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum ConfigValue {
-    Integer(u64),
+    /// Float first to preserve untagged deserialization preference for
+    /// whole-number JSON values (e.g. `{"lr": 1}`) as Float per prior behavior
+    /// and bot feedback on PR#12 (revert from Integer-first which changed semantics).
     Float(f32),
+    Integer(u64),
     String(String),
     Boolean(bool),
     FloatArray(Vec<f32>),
