@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - GitHub Actions CI workflow for automated validation (fmt, clippy, build, test) (#10).
 
 ### Changed
