@@ -117,7 +117,7 @@ impl NeuralBackend for ZmqBrainBackend {
             .unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
         socket.connect(&endpoint).map_err(|e| {
             BackendError::InitializationError(format!(
-                "ZMQ connect to {}: {} (is main_brain.jl running?)",
+                "ZMQ connect to {}: {} (is the IPC producer running?)",
                 endpoint, e
             ))
         })?;
