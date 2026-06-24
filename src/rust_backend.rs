@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Pure-Rust native backend — no external dependencies.
 
 use crate::{BackendError, NeuralBackend};
@@ -27,10 +29,7 @@ impl Default for RustBackend {
 }
 
 impl NeuralBackend for RustBackend {
-    fn process_signals(
-        &mut self,
-        inputs: &[f32],
-    ) -> Result<Vec<f32>, BackendError> {
+    fn process_signals(&mut self, inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
                 "RustBackend not initialized — call initialize() first".to_string(),
@@ -42,10 +41,10 @@ impl NeuralBackend for RustBackend {
         for i in 0..inputs.len() {
             let val = inputs[i];
             if val > 0.0 {
-                output[i * 2]     = val;
+                output[i * 2] = val;
                 output[i * 2 + 1] = 0.0;
             } else {
-                output[i * 2]     = 0.0;
+                output[i * 2] = 0.0;
                 output[i * 2 + 1] = val.abs();
             }
         }
@@ -98,7 +97,7 @@ mod tests {
         b.initialize(None).unwrap();
         let inputs = vec![0.0, 0.0, -0.5];
         let out = b.process_signals(&inputs).unwrap();
-        assert_eq!(out[4], 0.0);          // bull channel for ch2
+        assert_eq!(out[4], 0.0); // bull channel for ch2
         assert!((out[5] - 0.5).abs() < 1e-5); // bear channel
     }
 

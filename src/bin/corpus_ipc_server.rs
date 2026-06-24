@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Axum-based microservice exposing the `corpus-ipc` crate as a REST API.
 
 use std::net::SocketAddr;
@@ -5,7 +7,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::net::TcpListener;
 
-use axum::{extract::Extension, routing::post, Json, Router};
+use axum::{Json, Router, extract::Extension, routing::post};
 use corpus_ipc::trait_def::BackendFactory;
 use corpus_ipc::{BackendError, BackendType, NeuralBackend};
 use serde::{Deserialize, Serialize};
@@ -25,7 +27,9 @@ async fn main() {
             }
             #[cfg(not(feature = "zmq"))]
             {
-                eprintln!("[corpus-ipc-service] 'zmq' backend requested but crate was built without 'zmq' feature; falling back to Rust backend");
+                eprintln!(
+                    "[corpus-ipc-service] 'zmq' backend requested but crate was built without 'zmq' feature; falling back to Rust backend"
+                );
                 BackendType::Rust
             }
         }

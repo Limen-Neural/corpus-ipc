@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Data types that flow over the SNN backend IPC wire.
 
 use serde::{Deserialize, Serialize};
@@ -40,10 +42,10 @@ impl NeroManifoldSnapshot {
     pub fn from_scores(tick: i64, scores: &[f32; 4]) -> Self {
         Self {
             tick,
-            dopamine:      scores[0],
-            cortisol:      scores[1],
+            dopamine: scores[0],
+            cortisol: scores[1],
             acetylcholine: scores[2],
-            tempo:         scores[3],
+            tempo: scores[3],
         }
     }
 }
@@ -73,7 +75,7 @@ pub enum SpineMessage {
 }
 
 /// Batch of spike events from SNN processing.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct SpikeBatch {
     /// Optional session ID for concurrent experiment isolation.
     pub session_id: Option<String>,
@@ -88,7 +90,7 @@ pub struct SpikeBatch {
 }
 
 /// Individual spike event with channel, timing, and strength.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct SpikeEvent {
     /// Neural channel or neuron identifier.
     pub channel: u16,
@@ -99,7 +101,7 @@ pub struct SpikeEvent {
 }
 
 /// Batch of embeddings for projector and transformer components.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct EmbeddingBatch {
     /// Optional session ID for concurrent experiment isolation.
     pub session_id: Option<String>,
@@ -176,7 +178,7 @@ pub enum ConfigValue {
 }
 
 /// Optional batch metadata for debugging and monitoring.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct BatchMetadata {
     /// Processing latency in nanoseconds.
     pub processing_latency_ns: Option<u64>,
@@ -184,47 +186,4 @@ pub struct BatchMetadata {
     pub source: Option<String>,
     /// Additional metadata fields.
     pub custom: std::collections::HashMap<String, String>,
-}
-
-impl Default for SpikeEvent {
-    fn default() -> Self {
-        Self {
-            channel: 0,
-            time: 0,
-            strength: 0.0,
-        }
-    }
-}
-
-impl Default for SpikeBatch {
-    fn default() -> Self {
-        Self {
-            session_id: None,
-            batch_id: 0,
-            timestamp: 0,
-            spikes: Vec::new(),
-            metadata: None,
-        }
-    }
-}
-
-impl Default for EmbeddingBatch {
-    fn default() -> Self {
-        Self {
-            session_id: None,
-            batch_id: 0,
-            embedding: Vec::new(),
-            sequence_length: 0,
-        }
-    }
-}
-
-impl Default for BatchMetadata {
-    fn default() -> Self {
-        Self {
-            processing_latency_ns: None,
-            source: None,
-            custom: std::collections::HashMap::new(),
-        }
-    }
 }

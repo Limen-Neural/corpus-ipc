@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! ZMQ SUB backend — reads neural data packets from the Julia brain IPC socket.
 //!
 //! Requires feature `zmq`.
@@ -102,24 +104,24 @@ impl NeuralBackend for ZmqBrainBackend {
     }
 
     fn initialize(&mut self, _model_path: Option<&str>) -> Result<(), BackendError> {
-        let socket = self.context.socket(zmq::SUB)
-            .map_err(|e| BackendError::InitializationError(
-                format!("ZMQ SUB socket: {e}")
-            ))?;
-        socket.set_subscribe(b"")
-            .map_err(|e| BackendError::InitializationError(
-                format!("ZMQ subscribe: {e}")
-            ))?;
-        socket.set_rcvhwm(16)
-            .map_err(|e| BackendError::InitializationError(
-                format!("ZMQ rcvhwm: {e}")
-            ))?;
+        let socket = self
+            .context
+            .socket(zmq::SUB)
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ SUB socket: {e}")))?;
+        socket
+            .set_subscribe(b"")
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ subscribe: {e}")))?;
+        socket
+            .set_rcvhwm(16)
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ rcvhwm: {e}")))?;
         let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC")
             .unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
-        socket.connect(&endpoint)
-            .map_err(|e| BackendError::InitializationError(format!(
-                "ZMQ connect to {}: {} (is the IPC producer running?)", endpoint, e
-            )))?;
+        socket.connect(&endpoint).map_err(|e| {
+            BackendError::InitializationError(format!(
+                "ZMQ connect to {}: {} (is the IPC producer running?)",
+                endpoint, e
+            ))
+        })?;
 
         self.sub_socket = Some(SafeSocket { socket });
         self.initialized = true;
@@ -177,8 +179,8 @@ mod tests {
 
         assert_eq!(b.brain_tick, tick);
         assert_eq!(b.last_readout.len(), 20);
-        for i in 0..20 {
-            assert!((b.last_readout[i] - readout[i]).abs() < 1e-5);
+        for (i, val) in readout.iter().enumerate().take(20) {
+            assert!((b.last_readout[i] - val).abs() < 1e-5);
         }
     }
 
@@ -197,7 +199,7 @@ mod tests {
         // Simulate a recv call that would get this bad packet
         // In a real scenario, the Ok(buf) branch for bad length would be taken
         // and an error printed, but the state would not change.
-        if bad_buf.len() < 8 || (bad_buf.len() - 8) % 4 != 0 {
+        if bad_buf.len() < 8 || !(bad_buf.len() - 8).is_multiple_of(4) {
             // This is what should happen inside receive_readout
             eprintln!("[test] Malformed packet received");
         } else {

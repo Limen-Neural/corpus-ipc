@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+
 # corpus-ipc runtime boundary cleanup plan
 
 - Linear issue: LIM-10
@@ -47,8 +49,7 @@ To ensure the plan is grounded in the actual crate surface, this revision explic
 
 Observation:
 
-- No `TraderBackend` type, trait, or public API symbol remains.
-- A stale doc comment referencing `TraderBackend` exists at `src/error.rs:3`.
+- No `TraderBackend` type, trait, or public API symbol remains (the reference in the error module doc comment has been updated to the generic `BackendConnector` per #4).
 - The source audit list has been expanded to include `src/error.rs`.
 - Legacy/domain wording still appears through neural/brain/spine/NERO terminology in public traits, exported models, backend names, env vars, and service binary naming.
 

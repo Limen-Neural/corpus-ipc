@@ -1,8 +1,8 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! `NeuralBackend` trait and `BackendType` enumeration.
 
-use crate::{
-    BackendError, EmbeddingBatch, GradientBatch, RustBackend, SpikeBatch, TraceBatch,
-};
+use crate::{BackendError, EmbeddingBatch, GradientBatch, RustBackend, SpikeBatch, TraceBatch};
 
 /// Unified interface for neural processing backends.
 ///
@@ -19,10 +19,7 @@ pub trait NeuralBackend: Send + Sync {
     ///
     /// # Arguments
     /// - `inputs` — A dynamically sized slice of `f32` input signals.
-    fn process_signals(
-        &mut self,
-        inputs: &[f32],
-    ) -> Result<Vec<f32>, BackendError>;
+    fn process_signals(&mut self, inputs: &[f32]) -> Result<Vec<f32>, BackendError>;
 
     /// Initialise backend (load model weights, connect to IPC socket, etc.).
     ///
