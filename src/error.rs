@@ -4,8 +4,7 @@
 
 /// Errors that may be returned by any `BackendConnector` implementation (generic equivalent of the former TraderBackend).
 #[derive(Debug, thiserror::Error)]
-/// Errors that may be returned by any [`NeuralBackend`](crate::NeuralBackend) implementation.
-
+pub enum BackendError {
     #[error("Initialization failed: {0}")]
     InitializationError(String),
 
