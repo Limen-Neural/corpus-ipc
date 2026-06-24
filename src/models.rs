@@ -167,15 +167,37 @@ pub struct ConfigPayload {
 }
 
 /// Configuration value types.
+///
+/// Uses `#[serde(untagged)]` so plain JSON numbers/strings/arrays/booleans
+/// work directly inside `ConfigPayload::config`.
+///
+/// **Untagged deserialization behavior (intentional, pre-existing):**
+/// `Float(f32)` is first, so JSON numbers (e.g. `42` or `1.5`) always
+/// deserialize as `Float`. `Integer` is only reached for values that were
+/// originally `ConfigValue::Integer` in Rust and then serialized, or under
+/// certain deserializer configurations.
+///
+/// Round-tripping `Integer(42)` through JSON yields `Float(42.0)`.
+/// Large integers (> ~2^24) may lose precision in f32.
+/// Consumers relying on exact integer identity should be aware.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum ConfigValue {
-    /// Float first to preserve untagged deserialization preference for
-    /// whole-number JSON values (e.g. `{"lr": 1}`) as Float per prior behavior
-    /// and bot feedback on PR#12 (revert from Integer-first which changed semantics).
+    /// Floating-point value.
+    ///
+    /// Because this is the first variant in an untagged enum, JSON
+    /// numbers (integers and floats) deserialize as `Float`.
     Float(f32),
+
+    /// Integer value (u64).
+    ///
+    /// Typically only produced when a Rust `ConfigValue::Integer` is
+    /// serialized and round-tripped with the same serde configuration,
+    /// or in specific deserializer contexts. Plain JSON numbers land
+    /// in `Float` due to declaration order.
     Integer(u64),
-    String(String),
+
+    /// String value.
     Boolean(bool),
     FloatArray(Vec<f32>),
 }

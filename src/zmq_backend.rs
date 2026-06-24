@@ -165,10 +165,17 @@ impl BackendConnector for ZmqBrainBackend {
     }
 
     /// Reset cached readout state. Does not affect the remote process.
+    ///
+    /// As a side effect, clears the `initialized` flag and drops the current
+    /// SUB socket (if any). This allows a subsequent call to `initialize()`
+    /// to re-establish the connection (e.g. after changing
+    /// `CORPUS_IPC_ZMQ_READOUT_IPC` at runtime).
     fn reset(&mut self) -> Result<(), BackendError> {
         self.last_readout.clear();
         self.brain_tick = 0;
-        println!("[zmq-ipc] Readout cache reset");
+        self.initialized = false;
+        self.sub_socket = None;
+        println!("[zmq-ipc] Readout cache reset; will re-initialize on next call");
         Ok(())
     }
 }
