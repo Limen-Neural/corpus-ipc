@@ -69,7 +69,7 @@ impl ZmqBrainBackend {
                 }
             }
             Ok(buf) => {
-                eprintln!("[zmq-brain] Unexpected packet size: {} bytes", buf.len());
+                eprintln!("[zmq-ipc] Unexpected packet size: {} bytes", buf.len());
             }
             Err(zmq::Error::EAGAIN) => {
                 // No new packet available — return cached readout.
@@ -123,12 +123,12 @@ impl NeuralBackend for ZmqBrainBackend {
 
         self.sub_socket = Some(SafeSocket { socket });
         self.initialized = true;
-        println!("[zmq-brain] Connected to Julia Brain at {}", endpoint);
+        println!("[zmq-ipc] Connected to IPC producer at {}", endpoint);
         Ok(())
     }
 
     fn save_state(&self, _model_path: &str) -> Result<(), BackendError> {
-        println!("[zmq-brain] State lives in the Julia Brain process (CUDA VRAM)");
+        println!("[zmq-ipc] State lives in the external compute process (CUDA VRAM)");
         Ok(())
     }
 
@@ -139,7 +139,7 @@ impl NeuralBackend for ZmqBrainBackend {
     fn reset(&mut self) -> Result<(), BackendError> {
         self.last_readout.clear();
         self.brain_tick = 0;
-        println!("[zmq-brain] Readout cache reset");
+        println!("[zmq-ipc] Readout cache reset");
         Ok(())
     }
 }
