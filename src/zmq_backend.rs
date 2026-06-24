@@ -199,7 +199,7 @@ mod tests {
         // Simulate a recv call that would get this bad packet
         // In a real scenario, the Ok(buf) branch for bad length would be taken
         // and an error printed, but the state would not change.
-        if bad_buf.len() < 8 || !(bad_buf.len() - 8).is_multiple_of(4) {
+        if bad_buf.len() < 8 || (bad_buf.len() - 8) % 4 != 0 {
             // This is what should happen inside receive_readout
             eprintln!("[test] Malformed packet received");
         } else {
