@@ -120,4 +120,14 @@ mod tests {
         let b = RustBackend::new();
         assert!(b.get_spike_states().is_empty());
     }
+
+    #[test]
+    fn reset_clears_initialized_and_next_process_fails() {
+        let mut b = RustBackend::new();
+        b.initialize(None).unwrap();
+        let _ = b.process_signals(&[0.1; 2]).unwrap();
+        b.reset().unwrap();
+        // After reset(), process_signals must fail until initialize() is called again.
+        assert!(b.process_signals(&[0.1; 2]).is_err());
+    }
 }

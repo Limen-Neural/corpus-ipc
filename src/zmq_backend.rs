@@ -121,7 +121,13 @@ impl BackendConnector for ZmqBrainBackend {
     /// Initialise the ZMQ SUB socket and connect to the readout endpoint.
     ///
     /// Endpoint may be overridden by `CORPUS_IPC_ZMQ_READOUT_IPC`.
+    ///
     /// Idempotent: second call is a no-op once connected.
+    ///
+    /// To switch to a different endpoint at runtime (e.g. after changing the
+    /// `CORPUS_IPC_ZMQ_READOUT_IPC` env var), call `reset()` first to clear
+    /// the initialized flag and drop the current socket, then call `initialize()`
+    /// again. Without `reset()`, a second `initialize()` is a no-op.
     fn initialize(&mut self, _model_path: Option<&str>) -> Result<(), BackendError> {
         if self.initialized {
             return Ok(());

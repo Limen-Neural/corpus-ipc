@@ -28,5 +28,15 @@ pub use models::{
 pub use rust_backend::RustBackend;
 pub use trait_def::{BackendConnector, BackendType, HybridFlowBackend};
 
+/// Backward-compatibility alias.
+///
+/// The trait was previously named `NeuralBackend`. This type alias is provided
+/// for a transition period and is deprecated.
+#[deprecated(
+    since = "0.1.0",
+    note = "Renamed to BackendConnector (see #4). Use `BackendConnector` instead."
+)]
+pub type NeuralBackend = BackendConnector;
+
 #[cfg(feature = "zmq")]
 pub use zmq_backend::ZmqBrainBackend;
