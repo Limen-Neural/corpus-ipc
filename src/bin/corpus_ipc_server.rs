@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Axum-based microservice exposing the `corpus-ipc` crate as a REST API.
 
 use std::net::SocketAddr;
@@ -5,12 +7,12 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::net::TcpListener;
 
-use axum::{extract::Extension, routing::post, Json, Router};
+use axum::{Json, Router, extract::Extension, routing::post};
 use corpus_ipc::trait_def::BackendFactory;
-use corpus_ipc::{BackendError, BackendType, NeuralBackend};
+use corpus_ipc::{BackendConnector, BackendError, BackendType};
 use serde::{Deserialize, Serialize};
 
-type SharedBackend = Arc<Mutex<Box<dyn NeuralBackend>>>;
+type SharedBackend = Arc<Mutex<Box<dyn BackendConnector>>>;
 
 #[tokio::main]
 async fn main() {
@@ -25,7 +27,9 @@ async fn main() {
             }
             #[cfg(not(feature = "zmq"))]
             {
-                eprintln!("[corpus-ipc-service] 'zmq' backend requested but crate was built without 'zmq' feature; falling back to Rust backend");
+                eprintln!(
+                    "[corpus-ipc-service] 'zmq' backend requested but crate was built without 'zmq' feature; falling back to Rust backend"
+                );
                 BackendType::Rust
             }
         }
@@ -122,6 +126,10 @@ async fn save_state(
 async fn reset(Extension(backend): Extension<SharedBackend>) -> Json<SimpleRes> {
     let mut be = backend.lock().unwrap();
     let res = be.reset();
+    // Note: after reset(), some backends (e.g. ZMQ) clear their connection state
+    // and require a subsequent /initialize call before the next /process.
+    // Clients should call /initialize (with model_path if needed) after /reset
+    // if they intend to continue processing.
     reply(res, "reset")
 }
 

@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! ZMQ SUB backend — reads neural data packets from the Julia brain IPC socket.
 //!
 //! Requires feature `zmq`.
 
-use crate::{BackendError, NeuralBackend};
+use crate::{BackendConnector, BackendError};
 
 /// Default ZeroMQ IPC endpoint for receiving neural data packets.
 /// Can be overridden via environment variable `CORPUS_IPC_ZMQ_READOUT_IPC`.
@@ -36,6 +38,11 @@ pub struct ZmqBrainBackend {
 }
 
 impl ZmqBrainBackend {
+    /// Create a new uninitialized ZMQ backend.
+    ///
+    /// Socket and subscription are established only on the first successful
+    /// `initialize` call. Safe to construct even when the `zmq` feature is
+    /// enabled but the external publisher is not yet running.
     pub fn new() -> Self {
         Self {
             context: zmq::Context::new(),
@@ -47,6 +54,9 @@ impl ZmqBrainBackend {
     }
 
     /// Monotonic tick counter of the last received packet.
+    ///
+    /// Updated on every successful `receive_readout` (inside `process_signals`).
+    /// Useful for consumers that want to observe freshness without side effects.
     pub fn brain_tick(&self) -> i64 {
         self.brain_tick
     }
@@ -58,7 +68,7 @@ impl ZmqBrainBackend {
         let socket = &safe_socket.socket;
 
         match socket.recv_bytes(zmq::DONTWAIT) {
-            Ok(buf) if buf.len() >= 8 && (buf.len() - 8) % 4 == 0 => {
+            Ok(buf) if buf.len() >= 8 && (buf.len() - 8).is_multiple_of(4) => {
                 self.brain_tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
                 let num_floats = (buf.len() - 8) / 4;
                 self.last_readout.resize(num_floats, 0.0);
@@ -91,7 +101,14 @@ impl Default for ZmqBrainBackend {
     }
 }
 
-impl NeuralBackend for ZmqBrainBackend {
+impl BackendConnector for ZmqBrainBackend {
+    /// Process a dynamic slice of input signals through the neural backend.
+    ///
+    /// For ZMQ this ignores the `inputs` (the backend is a readout subscriber)
+    /// and returns the latest packet or cached value.
+    ///
+    /// # Errors
+    /// Returns `InitializationError` if the SUB socket is not connected.
     fn process_signals(&mut self, _inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
@@ -101,25 +118,38 @@ impl NeuralBackend for ZmqBrainBackend {
         self.receive_readout()
     }
 
+    /// Initialise the ZMQ SUB socket and connect to the readout endpoint.
+    ///
+    /// Endpoint may be overridden by `CORPUS_IPC_ZMQ_READOUT_IPC`.
+    ///
+    /// Idempotent: second call is a no-op once connected.
+    ///
+    /// To switch to a different endpoint at runtime (e.g. after changing the
+    /// `CORPUS_IPC_ZMQ_READOUT_IPC` env var), call `reset()` first to clear
+    /// the initialized flag and drop the current socket, then call `initialize()`
+    /// again. Without `reset()`, a second `initialize()` is a no-op.
     fn initialize(&mut self, _model_path: Option<&str>) -> Result<(), BackendError> {
-        let socket = self.context.socket(zmq::SUB)
-            .map_err(|e| BackendError::InitializationError(
-                format!("ZMQ SUB socket: {e}")
-            ))?;
-        socket.set_subscribe(b"")
-            .map_err(|e| BackendError::InitializationError(
-                format!("ZMQ subscribe: {e}")
-            ))?;
-        socket.set_rcvhwm(16)
-            .map_err(|e| BackendError::InitializationError(
-                format!("ZMQ rcvhwm: {e}")
-            ))?;
+        if self.initialized {
+            return Ok(());
+        }
+        let socket = self
+            .context
+            .socket(zmq::SUB)
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ SUB socket: {e}")))?;
+        socket
+            .set_subscribe(b"")
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ subscribe: {e}")))?;
+        socket
+            .set_rcvhwm(16)
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ rcvhwm: {e}")))?;
         let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC")
             .unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
-        socket.connect(&endpoint)
-            .map_err(|e| BackendError::InitializationError(format!(
-                "ZMQ connect to {}: {} (is the IPC producer running?)", endpoint, e
-            )))?;
+        socket.connect(&endpoint).map_err(|e| {
+            BackendError::InitializationError(format!(
+                "ZMQ connect to {}: {} (is the IPC producer running?)",
+                endpoint, e
+            ))
+        })?;
 
         self.sub_socket = Some(SafeSocket { socket });
         self.initialized = true;
@@ -127,19 +157,34 @@ impl NeuralBackend for ZmqBrainBackend {
         Ok(())
     }
 
+    /// Persist current model state (delegated to remote if supported).
+    /// Current ZMQ implementation is read-only; this is a no-op.
     fn save_state(&self, _model_path: &str) -> Result<(), BackendError> {
         println!("[zmq-ipc] State lives in the external compute process (CUDA VRAM)");
         Ok(())
     }
 
+    /// Derive spike states from the last readout vector.
+    ///
+    /// Values > 0.5 are treated as spiked (true). This is an approximation
+    /// since the ZMQ readout is a scalar activation vector, not explicit spikes.
+    /// (RustBackend returns an always-empty Vec because it is stateless.)
     fn get_spike_states(&self) -> Vec<bool> {
         self.last_readout.iter().map(|&v| v > 0.5).collect()
     }
 
+    /// Reset cached readout state. Does not affect the remote process.
+    ///
+    /// As a side effect, clears the `initialized` flag and drops the current
+    /// SUB socket (if any). This allows a subsequent call to `initialize()`
+    /// to re-establish the connection (e.g. after changing
+    /// `CORPUS_IPC_ZMQ_READOUT_IPC` at runtime).
     fn reset(&mut self) -> Result<(), BackendError> {
         self.last_readout.clear();
         self.brain_tick = 0;
-        println!("[zmq-ipc] Readout cache reset");
+        self.initialized = false;
+        self.sub_socket = None;
+        println!("[zmq-ipc] Readout cache reset; will re-initialize on next call");
         Ok(())
     }
 }
@@ -177,8 +222,8 @@ mod tests {
 
         assert_eq!(b.brain_tick, tick);
         assert_eq!(b.last_readout.len(), 20);
-        for i in 0..20 {
-            assert!((b.last_readout[i] - readout[i]).abs() < 1e-5);
+        for (i, val) in readout.iter().enumerate().take(20) {
+            assert!((b.last_readout[i] - val).abs() < 1e-5);
         }
     }
 
@@ -197,7 +242,7 @@ mod tests {
         // Simulate a recv call that would get this bad packet
         // In a real scenario, the Ok(buf) branch for bad length would be taken
         // and an error printed, but the state would not change.
-        if bad_buf.len() < 8 || (bad_buf.len() - 8) % 4 != 0 {
+        if bad_buf.len() < 8 || !(bad_buf.len() - 8).is_multiple_of(4) {
             // This is what should happen inside receive_readout
             eprintln!("[test] Malformed packet received");
         } else {

@@ -1,8 +1,8 @@
-//! `NeuralBackend` trait and `BackendType` enumeration.
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::{
-    BackendError, EmbeddingBatch, GradientBatch, RustBackend, SpikeBatch, TraceBatch,
-};
+//! `BackendConnector` trait and `BackendType` enumeration.
+
+use crate::{BackendError, EmbeddingBatch, GradientBatch, RustBackend, SpikeBatch, TraceBatch};
 
 /// Unified interface for neural processing backends.
 ///
@@ -14,15 +14,12 @@ use crate::{
 ///
 /// `process_signals` returns a `Vec<f32>` containing the processed outputs.
 /// The exact number of elements depends on the backend implementation.
-pub trait NeuralBackend: Send + Sync {
+pub trait BackendConnector: Send + Sync {
     /// Process a dynamic slice of input signals through the neural backend.
     ///
     /// # Arguments
     /// - `inputs` — A dynamically sized slice of `f32` input signals.
-    fn process_signals(
-        &mut self,
-        inputs: &[f32],
-    ) -> Result<Vec<f32>, BackendError>;
+    fn process_signals(&mut self, inputs: &[f32]) -> Result<Vec<f32>, BackendError>;
 
     /// Initialise backend (load model weights, connect to IPC socket, etc.).
     ///
@@ -36,13 +33,20 @@ pub trait NeuralBackend: Send + Sync {
     fn get_spike_states(&self) -> Vec<bool>;
 
     /// Reset internal network state (membrane potentials, caches).
+    ///
+    /// For connection-oriented backends (e.g. ZMQ), this may also drop the
+    /// transport socket and clear the initialized flag, requiring a subsequent
+    /// call to `initialize()` before the next `process_signals()`. Callers
+    /// should treat `reset()` + `process_signals()` without re-initialization
+    /// as potentially requiring re-connection for such backends.
     fn reset(&mut self) -> Result<(), BackendError>;
 }
 
 /// Optional high-level hybrid flow interface for message-oriented IPC backends.
 ///
 /// Backends that support structured spike/embedding exchange can implement this
-/// trait in addition to `NeuralBackend`.
+/// trait in addition to `BackendConnector`. It is optional; most simple
+/// backends only need `BackendConnector`.
 pub trait HybridFlowBackend: Send + Sync {
     /// Send a spike batch over the transport.
     fn send_spikes(&mut self, spikes: SpikeBatch) -> Result<(), BackendError>;
@@ -51,6 +55,8 @@ pub trait HybridFlowBackend: Send + Sync {
     fn send_embeddings(&mut self, embeddings: EmbeddingBatch) -> Result<(), BackendError>;
 
     /// Try receiving a gradient batch without blocking.
+    /// Returns `Ok(Some(batch))` when data is available, `Ok(None)` when the
+    /// channel is empty, or `Err` on transport failure.
     fn try_receive_gradients(&mut self) -> Result<Option<GradientBatch>, BackendError>;
 
     /// Try receiving an eligibility trace batch without blocking.
@@ -58,6 +64,9 @@ pub trait HybridFlowBackend: Send + Sync {
 }
 
 /// Backend implementation selector.
+///
+/// Used with `BackendFactory::create` to choose the concrete implementation
+/// at runtime. `Rust` is always available; `ZmqBrain` requires the `zmq` feature.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum BackendType {
     /// Pure-Rust native backend (always available, no external deps).
@@ -68,11 +77,18 @@ pub enum BackendType {
     ZmqBrain,
 }
 
-/// Factory for creating `NeuralBackend` instances.
+/// Factory for creating `BackendConnector` instances.
 pub struct BackendFactory;
 
 impl BackendFactory {
-    pub fn create(backend_type: BackendType) -> Box<dyn NeuralBackend> {
+    /// Create a boxed backend of the requested `BackendType`.
+    ///
+    /// The returned value implements `BackendConnector`. For `ZmqBrain`, the
+    /// crate must be compiled with the `zmq` feature or this will panic at
+    /// construction time (compile-time cfg guards the variant).
+    ///
+    /// Callers must still invoke `initialize` before `process_signals`.
+    pub fn create(backend_type: BackendType) -> Box<dyn BackendConnector> {
         match backend_type {
             BackendType::Rust => Box::new(RustBackend::new()),
             #[cfg(feature = "zmq")]

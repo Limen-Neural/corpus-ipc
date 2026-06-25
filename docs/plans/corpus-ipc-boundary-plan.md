@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+
 # corpus-ipc runtime boundary cleanup plan
 
 - Linear issue: LIM-10
@@ -47,8 +49,7 @@ To ensure the plan is grounded in the actual crate surface, this revision explic
 
 Observation:
 
-- No `TraderBackend` type, trait, or public API symbol remains.
-- A stale doc comment referencing `TraderBackend` exists at `src/error.rs:3`.
+- No `TraderBackend` type, trait, or public API symbol remains (the reference in the error module doc comment has been updated to the generic `BackendConnector` per #4).
 - The source audit list has been expanded to include `src/error.rs`.
 - Legacy/domain wording still appears through neural/brain/spine/NERO terminology in public traits, exported models, backend names, env vars, and service binary naming.
 
@@ -59,13 +60,12 @@ The following names currently leak legacy naming into the generic IPC surface (v
 1. `NeroManifoldSnapshot` model type and re-export.
 2. `ZmqBrainBackend` backend naming (`Brain` is product/domain-coded wording).
 3. `SpineMessage` naming (biological/product-coded framing instead of neutral IPC envelope terms).
-4. `process_signals` in `NeuralBackend` trait method (domain-coded behavior wording).
+4. `process_signals` in `BackendConnector` trait method (domain-coded behavior wording).
 
 **Note on service/entrypoint rename (this PR):** The service binary (`src/bin/corpus_ipc_server.rs`), env var names (`CORPUS_IPC_BACKEND_TYPE`, `CORPUS_IPC_BIND`, `CORPUS_IPC_ZMQ_READOUT_IPC`), and default endpoint were hard-renamed with no legacy aliases kept in this implementation pass. The items above (1-4) remain for subsequent type/trait migration stages. Downstream consumers (e.g. Julia publishers) and deployment configs must migrate to the new names/default path.
 
 Additional cleanup targets discovered in metadata/docs (deferred to later stage; not changed in this PR's service/entrypoint rename pass):
 
-- `Cargo.toml` TODO note in repository field.
 - README references to neural/hybrid-specific naming in public API lists.
 
 ## Public API target (planning)
@@ -79,7 +79,7 @@ Target API shape for a generic runtime/IPC core:
 
 Representative naming direction (non-binding planning examples):
 
-- `NeuralBackend` -> `RuntimeBackend`
+- `BackendConnector` (was NeuralBackend) -> `RuntimeBackend`
 - `process_signals` -> `process_batch` (or equivalent neutral verb)
 - `SpineMessage` -> `RuntimeMessage` / `Envelope`
 - `ZmqBrainBackend` -> `ZmqRuntimeBackend`

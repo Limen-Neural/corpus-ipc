@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 //! Pure-Rust native backend — no external dependencies.
 
-use crate::{BackendError, NeuralBackend};
+use crate::{BackendConnector, BackendError};
 
 /// Rust-native SNN backend.
 ///
@@ -15,6 +17,7 @@ pub struct RustBackend {
 }
 
 impl RustBackend {
+    /// Construct and return a fresh `RustBackend` in the uninitialized state.
     pub fn new() -> Self {
         Self { initialized: false }
     }
@@ -26,11 +29,8 @@ impl Default for RustBackend {
     }
 }
 
-impl NeuralBackend for RustBackend {
-    fn process_signals(
-        &mut self,
-        inputs: &[f32],
-    ) -> Result<Vec<f32>, BackendError> {
+impl BackendConnector for RustBackend {
+    fn process_signals(&mut self, inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
                 "RustBackend not initialized — call initialize() first".to_string(),
@@ -42,10 +42,10 @@ impl NeuralBackend for RustBackend {
         for i in 0..inputs.len() {
             let val = inputs[i];
             if val > 0.0 {
-                output[i * 2]     = val;
+                output[i * 2] = val;
                 output[i * 2 + 1] = 0.0;
             } else {
-                output[i * 2]     = 0.0;
+                output[i * 2] = 0.0;
                 output[i * 2 + 1] = val.abs();
             }
         }
@@ -67,7 +67,10 @@ impl NeuralBackend for RustBackend {
     }
 
     fn reset(&mut self) -> Result<(), BackendError> {
-        // No internal state to reset.
+        // Clear the initialized flag for consistency with other backends
+        // (e.g. ZMQ). After reset(), callers must invoke initialize()
+        // again before process_signals().
+        self.initialized = false;
         Ok(())
     }
 }
@@ -98,7 +101,7 @@ mod tests {
         b.initialize(None).unwrap();
         let inputs = vec![0.0, 0.0, -0.5];
         let out = b.process_signals(&inputs).unwrap();
-        assert_eq!(out[4], 0.0);          // bull channel for ch2
+        assert_eq!(out[4], 0.0); // bull channel for ch2
         assert!((out[5] - 0.5).abs() < 1e-5); // bear channel
     }
 
@@ -116,5 +119,15 @@ mod tests {
     fn spike_states_is_empty() {
         let b = RustBackend::new();
         assert!(b.get_spike_states().is_empty());
+    }
+
+    #[test]
+    fn reset_clears_initialized_and_next_process_fails() {
+        let mut b = RustBackend::new();
+        b.initialize(None).unwrap();
+        let _ = b.process_signals(&[0.1; 2]).unwrap();
+        b.reset().unwrap();
+        // After reset(), process_signals must fail until initialize() is called again.
+        assert!(b.process_signals(&[0.1; 2]).is_err());
     }
 }
