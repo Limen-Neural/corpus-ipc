@@ -68,7 +68,7 @@ impl ZmqBrainBackend {
         let socket = &safe_socket.socket;
 
         match socket.recv_bytes(zmq::DONTWAIT) {
-            Ok(buf) if buf.len() >= 8 && (buf.len() - 8) % 4 == 0 => {
+            Ok(buf) if buf.len() >= 8 && (buf.len() - 8).is_multiple_of(4) => {
                 self.brain_tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
                 let num_floats = (buf.len() - 8) / 4;
                 self.last_readout.resize(num_floats, 0.0);
@@ -158,8 +158,11 @@ impl BackendConnector for ZmqBrainBackend {
         Ok(())
     }
 
-    /// Return last known spike states from the remote brain.
-    /// ZMQ path currently returns empty (readout is scalar vector, not spikes).
+    /// Derive spike states from the last readout vector.
+    ///
+    /// Values > 0.5 are treated as spiked (true). This is an approximation
+    /// since the ZMQ readout is a scalar activation vector, not explicit spikes.
+    /// (RustBackend returns an always-empty Vec because it is stateless.)
     fn get_spike_states(&self) -> Vec<bool> {
         self.last_readout.iter().map(|&v| v > 0.5).collect()
     }
@@ -233,7 +236,7 @@ mod tests {
         // Simulate a recv call that would get this bad packet
         // In a real scenario, the Ok(buf) branch for bad length would be taken
         // and an error printed, but the state would not change.
-        if bad_buf.len() < 8 || (bad_buf.len() - 8) % 4 != 0 {
+        if bad_buf.len() < 8 || !(bad_buf.len() - 8).is_multiple_of(4) {
             // This is what should happen inside receive_readout
             eprintln!("[test] Malformed packet received");
         } else {

@@ -67,7 +67,10 @@ impl BackendConnector for RustBackend {
     }
 
     fn reset(&mut self) -> Result<(), BackendError> {
-        // No internal state to reset.
+        // Clear the initialized flag for consistency with other backends
+        // (e.g. ZMQ). After reset(), callers must invoke initialize()
+        // again before process_signals().
+        self.initialized = false;
         Ok(())
     }
 }

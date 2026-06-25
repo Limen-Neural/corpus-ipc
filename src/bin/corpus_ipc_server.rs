@@ -126,6 +126,10 @@ async fn save_state(
 async fn reset(Extension(backend): Extension<SharedBackend>) -> Json<SimpleRes> {
     let mut be = backend.lock().unwrap();
     let res = be.reset();
+    // Note: after reset(), some backends (e.g. ZMQ) clear their connection state
+    // and require a subsequent /initialize call before the next /process.
+    // Clients should call /initialize (with model_path if needed) after /reset
+    // if they intend to continue processing.
     reply(res, "reset")
 }
 
