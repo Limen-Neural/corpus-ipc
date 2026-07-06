@@ -9,10 +9,10 @@ use tokio::net::TcpListener;
 
 use axum::{Json, Router, extract::Extension, routing::post};
 use corpus_ipc::trait_def::BackendFactory;
-use corpus_ipc::{BackendConnector, BackendError, BackendType};
+use corpus_ipc::{RuntimeBackend, BackendError, BackendType};
 use serde::{Deserialize, Serialize};
 
-type SharedBackend = Arc<Mutex<Box<dyn BackendConnector>>>;
+type SharedBackend = Arc<Mutex<Box<dyn RuntimeBackend>>>;
 
 #[tokio::main]
 async fn main() {
@@ -23,7 +23,7 @@ async fn main() {
         Ok("zmq") => {
             #[cfg(feature = "zmq")]
             {
-                BackendType::ZmqBrain
+                BackendType::ZmqRuntime
             }
             #[cfg(not(feature = "zmq"))]
             {
@@ -105,7 +105,7 @@ async fn process(
     Json(payload): Json<ProcessReq>,
 ) -> Result<Json<ProcessRes>, Json<SimpleRes>> {
     let mut be = backend.lock().unwrap();
-    match be.process_signals(&payload.inputs) {
+    match be.process_batch(&payload.inputs) {
         Ok(out) => Ok(Json(ProcessRes { output: out })),
         Err(e) => Err(Json(SimpleRes {
             ok: false,

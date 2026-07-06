@@ -7,7 +7,7 @@
 //! Provides a unified interface for various backends:
 //!
 //! - [`RustBackend`] — pure-Rust native backend (no external deps, always available)
-//! - [`ZmqBrainBackend`] — IPC backend via ZMQ SUB socket (feature `zmq`)
+//! - [`ZmqRuntimeBackend`] — IPC backend via ZMQ SUB socket (feature `zmq`)
 
 pub mod error;
 pub mod models;
@@ -22,21 +22,12 @@ pub use error::BackendError;
 /// Re-export all public data models used on the wire.
 pub use models::{
     BatchMetadata, ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate,
-    NeroManifoldSnapshot, SpikeBatch, SpikeEvent, SpineMessage, TraceBatch, TraceData,
+    RuntimeSnapshot, SpikeBatch, SpikeEvent, RuntimeMessage, TraceBatch, TraceData,
 };
 /// Re-export the core trait and factory.
 pub use rust_backend::RustBackend;
-pub use trait_def::{BackendConnector, BackendType, HybridFlowBackend};
+pub use trait_def::{RuntimeBackend, BackendType, HybridFlowBackend};
 
-/// Backward-compatibility alias.
-///
-/// The trait was previously named `NeuralBackend`. This re-export is provided
-/// for a transition period and is deprecated.
-#[deprecated(
-    since = "0.1.0",
-    note = "Renamed to BackendConnector (see #4). Use `BackendConnector` instead."
-)]
-pub use trait_def::BackendConnector as NeuralBackend;
 
 #[cfg(feature = "zmq")]
-pub use zmq_backend::ZmqBrainBackend;
+pub use zmq_backend::ZmqRuntimeBackend;

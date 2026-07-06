@@ -2,9 +2,9 @@
 
 //! Pure-Rust native backend — no external dependencies.
 
-use crate::{BackendConnector, BackendError};
+use crate::{RuntimeBackend, BackendError};
 
-/// Rust-native SNN backend.
+/// Rust-native compute backend.
 ///
 /// Implements a simple push-pull encoding: each input channel is split
 /// into a positive/negative pair. Channel `i` → `output[i*2]` (positive),
@@ -29,8 +29,8 @@ impl Default for RustBackend {
     }
 }
 
-impl BackendConnector for RustBackend {
-    fn process_signals(&mut self, inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
+impl RuntimeBackend for RustBackend {
+    fn process_batch(&mut self, inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
                 "RustBackend not initialized — call initialize() first".to_string(),
@@ -69,7 +69,7 @@ impl BackendConnector for RustBackend {
     fn reset(&mut self) -> Result<(), BackendError> {
         // Clear the initialized flag for consistency with other backends
         // (e.g. ZMQ). After reset(), callers must invoke initialize()
-        // again before process_signals().
+        // again before process_batch().
         self.initialized = false;
         Ok(())
     }
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn process_before_init_returns_error() {
         let mut b = RustBackend::new();
-        assert!(b.process_signals(&[0.0; 4]).is_err());
+        assert!(b.process_batch(&[0.0; 4]).is_err());
     }
 
     #[test]
@@ -90,7 +90,7 @@ mod tests {
         let mut b = RustBackend::new();
         b.initialize(None).unwrap();
         let inputs = vec![0.8, 0.0, 0.0];
-        let out = b.process_signals(&inputs).unwrap();
+        let out = b.process_batch(&inputs).unwrap();
         assert!((out[0] - 0.8).abs() < 1e-5);
         assert_eq!(out[1], 0.0);
     }
@@ -100,7 +100,7 @@ mod tests {
         let mut b = RustBackend::new();
         b.initialize(None).unwrap();
         let inputs = vec![0.0, 0.0, -0.5];
-        let out = b.process_signals(&inputs).unwrap();
+        let out = b.process_batch(&inputs).unwrap();
         assert_eq!(out[4], 0.0); // bull channel for ch2
         assert!((out[5] - 0.5).abs() < 1e-5); // bear channel
     }
@@ -109,9 +109,9 @@ mod tests {
     fn output_has_double_the_elements() {
         let mut b = RustBackend::new();
         b.initialize(None).unwrap();
-        let out = b.process_signals(&[0.1; 8]).unwrap();
+        let out = b.process_batch(&[0.1; 8]).unwrap();
         assert_eq!(out.len(), 16);
-        let out_5 = b.process_signals(&[0.1; 5]).unwrap();
+        let out_5 = b.process_batch(&[0.1; 5]).unwrap();
         assert_eq!(out_5.len(), 10);
     }
 
@@ -125,9 +125,9 @@ mod tests {
     fn reset_clears_initialized_and_next_process_fails() {
         let mut b = RustBackend::new();
         b.initialize(None).unwrap();
-        let _ = b.process_signals(&[0.1; 2]).unwrap();
+        let _ = b.process_batch(&[0.1; 2]).unwrap();
         b.reset().unwrap();
-        // After reset(), process_signals must fail until initialize() is called again.
-        assert!(b.process_signals(&[0.1; 2]).is_err());
+        // After reset(), process_batch must fail until initialize() is called again.
+        assert!(b.process_batch(&[0.1; 2]).is_err());
     }
 }
