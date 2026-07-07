@@ -51,18 +51,18 @@ Observation:
 
 - No `TraderBackend` type, trait, or public API symbol remains (the reference in the error module doc comment has been updated to the generic `BackendConnector` per #4).
 - The source audit list has been expanded to include `src/error.rs`.
-- Legacy/domain wording has been cleaned from public traits, exported models, backend names, env vars, and service binary naming (addressed in #4 + #5).
+- Legacy/domain wording still appears through neural/brain/spine/NERO terminology in public traits, exported models, backend names, env vars, and service binary naming.
 
 ## Legacy wording inventory
 
-The following names previously leaked legacy naming into the generic IPC surface (addressed by #4 + #5):
+The following names currently leak legacy naming into the generic IPC surface (verified from the source files above):
 
-1. ~~`NeroManifoldSnapshot`~~ → `Snapshot` (model type and re-export).
-2. ~~`ZmqBrainBackend`~~ → `ZmqBackend` (backend naming); `BackendType::ZmqBrain` → `Zmq`.
-3. ~~`SpineMessage`~~ → `Message` (biological/product-coded framing replaced with neutral IPC envelope term).
-4. ~~`process_signals`~~ → `process` (in `BackendConnector` trait method).
+1. `NeroManifoldSnapshot` model type and re-export.
+2. `ZmqBrainBackend` backend naming (`Brain` is product/domain-coded wording).
+3. `SpineMessage` naming (biological/product-coded framing instead of neutral IPC envelope terms).
+4. `process_signals` in `BackendConnector` trait method (domain-coded behavior wording).
 
-**Note on service/entrypoint rename (prior PR):** The service binary, env var names, and default endpoint were hard-renamed with no legacy aliases. Items above were completed in the #4 + #5 pass. Downstream consumers must migrate.
+**Note on service/entrypoint rename (this PR):** The service binary (`src/bin/corpus_ipc_server.rs`), env var names (`CORPUS_IPC_BACKEND_TYPE`, `CORPUS_IPC_BIND`, `CORPUS_IPC_ZMQ_READOUT_IPC`), and default endpoint were hard-renamed with no legacy aliases kept in this implementation pass. The items above (1-4) remain for subsequent type/trait migration stages. Downstream consumers (e.g. Julia publishers) and deployment configs must migrate to the new names/default path.
 
 Additional cleanup targets discovered in metadata/docs (deferred to later stage; not changed in this PR's service/entrypoint rename pass):
 
