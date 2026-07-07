@@ -4,5 +4,3 @@ exclude_paths:
   - "REVIEW.md"
   - "CHANGELOG.md"
   - "docs/**"
-  - ".kilo/**"
-  - ".mimocode/**"
