@@ -8,18 +8,18 @@ Inter-Process Communication (IPC) library for bridging Rust to external compute 
 
 ## Features
 
-- `BackendConnector` trait for backend-agnostic signal processing (was NeuralBackend)
+- `RuntimeBackend` trait for backend-agnostic signal processing (was BackendConnector)
 - `RustBackend` reference backend (always available)
-- `ZmqBrainBackend` backend via ZMQ SUB socket (feature `zmq`)
+- `ZmqRuntimeBackend` backend via ZMQ SUB socket (feature `zmq`)
 - Canonical protocol models:
-  - `SpineMessage`
+  - `RuntimeMessage`
   - `SpikeBatch`, `SpikeEvent`
   - `EmbeddingBatch`
   - `GradientBatch`, `GradientUpdate`
   - `TraceBatch`, `TraceData`
   - `ConfigPayload`, `ConfigValue`, `BatchMetadata`
 - `HybridFlowBackend` trait for message-oriented hybrid transports
-- `NeroManifoldSnapshot` for parsed neuromodulator readout payloads
+- `RuntimeSnapshot` for parsed runtime readout payloads
 
 ## Installation
 
@@ -34,14 +34,14 @@ corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc" }
 ## Quick Start
 
 ```rust
-use corpus_ipc::{BackendType, BackendConnector};
+use corpus_ipc::{BackendType, RuntimeBackend};
 use corpus_ipc::trait_def::BackendFactory;
 
 let mut backend = BackendFactory::create(BackendType::Rust);
 backend.initialize(None)?;
 
 let inputs = [0.1_f32, -0.2, 0.3, 0.0];
-let outputs = backend.process_signals(&inputs)?;
+let outputs = backend.process_batch(&inputs)?;
 
 println!("{}", outputs.len());
 # Ok::<(), corpus_ipc::BackendError>(())
@@ -54,19 +54,19 @@ println!("{}", outputs.len());
 Use these re-exports directly from crate root:
 
 ```rust
-use corpus_ipc::{SpineMessage, SpikeBatch, EmbeddingBatch};
+use corpus_ipc::{RuntimeMessage, SpikeBatch, EmbeddingBatch};
 ```
 
 ## Crate Exports
 
 - Backends and traits:
-  - `BackendConnector`, `HybridFlowBackend`
+  - `RuntimeBackend`, `HybridFlowBackend`
   - `BackendType`
   - `RustBackend`
-  - `ZmqBrainBackend` (when `zmq` feature enabled)
+  - `ZmqRuntimeBackend` (when `zmq` feature enabled)
 - Models:
-  - `SpineMessage` and all batch/config/trace/gradient payload structs
-  - `NeroManifoldSnapshot`
+  - `RuntimeMessage` and all batch/config/trace/gradient payload structs
+  - `RuntimeSnapshot`
 
 ## License
 
