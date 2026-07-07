@@ -1,1 +1,7 @@
 /target
+docs/plans
+.kilo/
+.codex/
+.cursor/
+.vscode/
+.mimocode/
