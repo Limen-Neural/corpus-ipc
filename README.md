@@ -25,10 +25,10 @@ Inter-Process Communication (IPC) library for bridging Rust to external compute 
 
 ```toml
 [dependencies]
-corpus-ipc = { git = "https://github.com/Limen-Compute/corpus-ipc" }
+corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc" }
 
 # Optional ZMQ backend support
-# corpus-ipc = { git = "https://github.com/Limen-Compute/corpus-ipc", features = ["zmq"] }
+# corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc", features = ["zmq"] }
 ```
 
 ## Quick Start

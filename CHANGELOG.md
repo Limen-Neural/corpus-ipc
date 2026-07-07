@@ -24,4 +24,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Various minor clippy lints and formatting to enable strict CI enforcement (#10).
 - Markdown lint in boundary plan (Codacy "spaces inside code span").
 
-[Unreleased]: https://github.com/Limen-Compute/corpus-ipc/compare/main...HEAD
+[Unreleased]: https://github.com/Limen-Neural/corpus-ipc/compare/main...HEAD
