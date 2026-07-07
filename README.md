@@ -8,7 +8,7 @@ Inter-Process Communication (IPC) library for bridging Rust to external compute 
 
 ## Features
 
-- `RuntimeBackend` trait for backend-agnostic signal processing (was ComputeBackend)
+- `RuntimeBackend` trait for backend-agnostic signal processing (was BackendConnector)
 - `RustBackend` reference backend (always available)
 - `ZmqRuntimeBackend` backend via ZMQ SUB socket (feature `zmq`)
 - Canonical protocol models:

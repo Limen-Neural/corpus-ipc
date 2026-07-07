@@ -150,6 +150,7 @@ pub struct TraceBatch {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct TraceData {
     /// Channel or synapse identifier.
+    #[serde(alias = "neuron_id")]
     pub channel_id: u16,
     /// Trace value (decay-modulated spike history).
     pub trace_value: f32,
