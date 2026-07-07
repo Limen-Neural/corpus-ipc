@@ -9,7 +9,7 @@ use tokio::net::TcpListener;
 
 use axum::{Json, Router, extract::Extension, routing::post};
 use corpus_ipc::trait_def::BackendFactory;
-use corpus_ipc::{RuntimeBackend, BackendError, BackendType};
+use corpus_ipc::{BackendError, BackendType, RuntimeBackend};
 use serde::{Deserialize, Serialize};
 
 type SharedBackend = Arc<Mutex<Box<dyn RuntimeBackend>>>;

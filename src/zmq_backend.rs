@@ -4,7 +4,7 @@
 //!
 //! Requires feature `zmq`.
 
-use crate::{RuntimeBackend, BackendError};
+use crate::{BackendError, RuntimeBackend};
 
 /// Default ZeroMQ IPC endpoint for receiving compute data packets.
 /// Can be overridden via environment variable `CORPUS_IPC_ZMQ_READOUT_IPC`.

@@ -22,12 +22,11 @@ pub use error::BackendError;
 /// Re-export all public data models used on the wire.
 pub use models::{
     BatchMetadata, ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate,
-    RuntimeSnapshot, SpikeBatch, SpikeEvent, RuntimeMessage, TraceBatch, TraceData,
+    RuntimeMessage, RuntimeSnapshot, SpikeBatch, SpikeEvent, TraceBatch, TraceData,
 };
 /// Re-export the core trait and factory.
 pub use rust_backend::RustBackend;
-pub use trait_def::{RuntimeBackend, BackendType, HybridFlowBackend};
-
+pub use trait_def::{BackendType, HybridFlowBackend, RuntimeBackend};
 
 #[cfg(feature = "zmq")]
 pub use zmq_backend::ZmqRuntimeBackend;

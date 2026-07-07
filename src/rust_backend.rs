@@ -2,7 +2,7 @@
 
 //! Pure-Rust native backend — no external dependencies.
 
-use crate::{RuntimeBackend, BackendError};
+use crate::{BackendError, RuntimeBackend};
 
 /// Rust-native compute backend.
 ///
