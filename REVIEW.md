@@ -12,7 +12,7 @@
 - Adding `#[serde(alias = "...")]` preserves backward compatibility for deserialization
 - Renaming enum variants in `RuntimeMessage` is safe (externally-tagged — serde uses variant names)
 - Renaming struct fields changes the serialization output — requires downstream coordination
-- Never alter academic citations in doc comments
+- Do NOT rename literature citations in doc comments without verifying the actual paper title
 
 ## Naming Conventions
 
