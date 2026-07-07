@@ -43,10 +43,13 @@ cargo build --features zmq  # compile with ZMQ backend
 
 ## Constraints
 
-- Do NOT rename literature citations in doc comments without verifying the actual paper title
-- Do NOT change serde field names without adding `#[serde(alias = "...")]` for backward compatibility
+P0 (critical — never violate):
+- Do Not rename literature citations in doc comments without verifying the actual paper title
+- Do Not change serde field names without adding `#[serde(alias = "...")]` for backward compatibility
+- Do Not commit secrets, tokens, or API keys to the repository
+
+P1 (important — avoid unless justified):
 - Avoid domain-specific naming (Nero, Brain, Spine) — prefer generic runtime/IPC terms
-- Do NOT commit secrets, tokens, or API keys to the repository
 - `docs/plans/` is gitignored — avoid tracking planning documents
 
 ## CI
