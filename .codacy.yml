@@ -1,8 +1,8 @@
 ---
-exclude_patterns:
+exclude_paths:
   - "AGENTS.md"
   - "REVIEW.md"
   - "CHANGELOG.md"
-  - "docs/"
-  - ".kilo/"
-  - ".mimocode/"
+  - "docs/**"
+  - ".kilo/**"
+  - ".mimocode/**"
