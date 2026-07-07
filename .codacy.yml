@@ -1,0 +1,6 @@
+---
+exclude_paths:
+  - "AGENTS.md"
+  - "REVIEW.md"
+  - "CHANGELOG.md"
+  - "docs/**"
