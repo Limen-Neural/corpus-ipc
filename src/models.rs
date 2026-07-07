@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Runtime snapshot decoded from the remote compute's 88-byte IPC packet.
+/// 4-runtime snapshot decoded from the remote compute's 88-byte generic packet.
 ///
 /// # Wire format (bytes 72–87 of the generic IPC packet)
 /// ```text
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// # References
 ///
-/// - Schultz, W. (1998). Predictive reward signal of dopamine neurons.
+/// - Schultz, W. (1998). Predictive reward signal of dopamine channels.
 ///   *Journal of Neurophysiology*, 80(1), 1–27.
 /// - Arnsten, A. F. T. (2009). Stress signalling pathways that impair
 ///   prefrontal cortex structure and function.
@@ -92,7 +92,7 @@ pub struct SpikeBatch {
 /// Individual spike event with channel, timing, and strength.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct SpikeEvent {
-    /// Channel identifier.
+    /// Compute channel or channel identifier.
     pub channel: u16,
     /// Spike timestamp (relative or absolute).
     pub time: u32,
