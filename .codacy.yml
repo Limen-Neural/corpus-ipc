@@ -1,0 +1,8 @@
+---
+exclude_patterns:
+  - "AGENTS.md"
+  - "REVIEW.md"
+  - "CHANGELOG.md"
+  - "docs/"
+  - ".kilo/"
+  - ".mimocode/"
