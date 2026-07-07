@@ -2,7 +2,7 @@
 
 //! Backend error type.
 
-/// Errors that may be returned by any `BackendConnector` implementation.
+/// Errors that may be returned by any `RuntimeBackend` implementation.
 ///
 /// These cover initialization, processing, model persistence, IPC communication,
 /// and invalid caller input. The inner `String` carries a human-readable
@@ -13,7 +13,7 @@ pub enum BackendError {
     #[error("Initialization failed: {0}")]
     InitializationError(String),
 
-    /// Error during `process_signals` (e.g. shape mismatch, backend internal failure).
+    /// Error during `process_batch` (e.g. shape mismatch, backend internal failure).
     #[error("Processing failed: {0}")]
     ProcessingError(String),
 

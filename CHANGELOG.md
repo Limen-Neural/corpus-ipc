@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Switched license from GPL-3.0-or-later to dual MIT/Apache-2.0 for broader adoptability as core IPC infrastructure (#11).
-- Updated stale `TraderBackend` reference in error docs to generic `BackendConnector` (#4).
+- Updated stale `TraderBackend` reference in error docs to generic `RuntimeBackend` (#4).
 - Cleaned legacy terminology in zmq logs for neutral boundary (as part of combined #4 work).
 
 ### Fixed

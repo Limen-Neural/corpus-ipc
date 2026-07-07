@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Data types that flow over the SNN backend IPC wire.
+//! Data types that flow over the compute backend IPC wire.
 
 use serde::{Deserialize, Serialize};
 
-/// 4-neuromodulator snapshot decoded from the Julia brain's 88-byte NERO packet.
+/// 4-runtime snapshot decoded from the remote compute's 88-byte generic packet.
 ///
-/// # Wire format (bytes 72–87 of the NERO IPC packet)
+/// # Wire format (bytes 72–87 of the generic IPC packet)
 /// ```text
 /// [72..76]  dopamine       f32 LE   reward / learning-rate gate
 /// [76..80]  cortisol       f32 LE   stress / inhibition
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// # References
 ///
-/// - Schultz, W. (1998). Predictive reward signal of dopamine neurons.
+/// - Schultz, W. (1998). Predictive reward signal of dopamine channels.
 ///   *Journal of Neurophysiology*, 80(1), 1–27.
 /// - Arnsten, A. F. T. (2009). Stress signalling pathways that impair
 ///   prefrontal cortex structure and function.
@@ -24,8 +24,8 @@ use serde::{Deserialize, Serialize};
 /// - Hasselmo, M. E. (1999). Neuromodulation: acetylcholine and memory
 ///   consolidation. *Trends in Cognitive Sciences*, 3(9), 351–359.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NeroManifoldSnapshot {
-    /// Tick counter from the Julia brain (monotonically increasing).
+pub struct RuntimeSnapshot {
+    /// Tick counter from the remote compute (monotonically increasing).
     pub tick: i64,
     /// Dopamine level (reward / STDP learning-rate gate). Range [0, 1].
     pub dopamine: f32,
@@ -37,8 +37,8 @@ pub struct NeroManifoldSnapshot {
     pub tempo: f32,
 }
 
-impl NeroManifoldSnapshot {
-    /// Parse from the 4 NERO score floats in bytes `[72..88]` of a NERO packet.
+impl RuntimeSnapshot {
+    /// Parse from the 4 generic score floats in bytes `[72..88]` of a generic packet.
     pub fn from_scores(tick: i64, scores: &[f32; 4]) -> Self {
         Self {
             tick,
@@ -50,14 +50,14 @@ impl NeroManifoldSnapshot {
     }
 }
 
-/// Core message enum for Rust<->Julia neuromorphic communication.
+/// Core message enum for Rust<->Julia cross-process communication.
 ///
 /// Messages are separated into:
 /// - Input from Rust to Julia (spikes, embeddings, config)
 /// - Output from Julia to Rust (gradients, traces, training status)
 /// - Control messages (shutdown, ping)
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum SpineMessage {
+pub enum RuntimeMessage {
     // Input from Rust to Julia
     Spikes(SpikeBatch),
     Embeddings(EmbeddingBatch),
@@ -74,7 +74,7 @@ pub enum SpineMessage {
     Ping,
 }
 
-/// Batch of spike events from SNN processing.
+/// Batch of spike events from compute processing.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct SpikeBatch {
     /// Optional session ID for concurrent experiment isolation.
@@ -92,7 +92,7 @@ pub struct SpikeBatch {
 /// Individual spike event with channel, timing, and strength.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct SpikeEvent {
-    /// Neural channel or neuron identifier.
+    /// Compute channel or channel identifier.
     pub channel: u16,
     /// Spike timestamp (relative or absolute).
     pub time: u32,
@@ -107,7 +107,7 @@ pub struct EmbeddingBatch {
     pub session_id: Option<String>,
     /// Unique batch identifier for correlation.
     pub batch_id: u64,
-    /// Embedding vector from SNN processing.
+    /// Embedding vector from compute processing.
     pub embedding: Vec<f32>,
     /// Sequence length for transformer compatibility.
     pub sequence_length: usize,
@@ -149,8 +149,9 @@ pub struct TraceBatch {
 /// Individual eligibility trace data.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct TraceData {
-    /// Neuron or synapse identifier.
-    pub neuron_id: u16,
+    /// Channel or synapse identifier.
+    #[serde(alias = "neuron_id")]
+    pub channel_id: u16,
     /// Trace value (decay-modulated spike history).
     pub trace_value: f32,
     /// Timestamp of last contributing spike.
@@ -212,7 +213,7 @@ pub enum ConfigValue {
 pub struct BatchMetadata {
     /// Processing latency in nanoseconds.
     pub processing_latency_ns: Option<u64>,
-    /// Source identifier (for example, "encoder", "snn_layer_2").
+    /// Source identifier (for example, "encoder", "compute_layer_2").
     pub source: Option<String>,
     /// Additional metadata fields.
     pub custom: std::collections::HashMap<String, String>,

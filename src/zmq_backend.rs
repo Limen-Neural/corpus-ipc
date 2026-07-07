@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! ZMQ SUB backend — reads neural data packets from the Julia brain IPC socket.
+//! ZMQ SUB backend — reads compute data packets from the remote compute IPC socket.
 //!
 //! Requires feature `zmq`.
 
-use crate::{BackendConnector, BackendError};
+use crate::{BackendError, RuntimeBackend};
 
-/// Default ZeroMQ IPC endpoint for receiving neural data packets.
+/// Default ZeroMQ IPC endpoint for receiving compute data packets.
 /// Can be overridden via environment variable `CORPUS_IPC_ZMQ_READOUT_IPC`.
 const DEFAULT_READOUT_IPC: &str = "ipc:///tmp/corpus_ipc_readout.ipc";
 
@@ -18,8 +18,8 @@ struct SafeSocket {
 unsafe impl Send for SafeSocket {}
 unsafe impl Sync for SafeSocket {}
 
-/// Julia IPC backend — subscribes to the Julia brain's ZMQ PUB socket and
-/// returns the latest neural readouts on each call.
+/// Generic IPC backend — subscribes to the remote compute's ZMQ PUB socket and
+/// returns the latest compute readouts on each call.
 ///
 /// # Wire format
 /// The packet consists of an 8-byte header followed by a variable number of
@@ -29,15 +29,15 @@ unsafe impl Sync for SafeSocket {}
 /// [0..8]   tick     i64 LE      monotonic tick counter
 /// [8..]    readout  N×f32 LE    lobe outputs
 /// ```
-pub struct ZmqBrainBackend {
+pub struct ZmqRuntimeBackend {
     context: zmq::Context,
     sub_socket: Option<SafeSocket>,
     initialized: bool,
     pub(crate) last_readout: Vec<f32>,
-    pub brain_tick: i64,
+    pub tick: i64,
 }
 
-impl ZmqBrainBackend {
+impl ZmqRuntimeBackend {
     /// Create a new uninitialized ZMQ backend.
     ///
     /// Socket and subscription are established only on the first successful
@@ -49,16 +49,16 @@ impl ZmqBrainBackend {
             sub_socket: None,
             initialized: false,
             last_readout: Vec::new(),
-            brain_tick: 0,
+            tick: 0,
         }
     }
 
     /// Monotonic tick counter of the last received packet.
     ///
-    /// Updated on every successful `receive_readout` (inside `process_signals`).
+    /// Updated on every successful `receive_readout` (inside `process_batch`).
     /// Useful for consumers that want to observe freshness without side effects.
-    pub fn brain_tick(&self) -> i64 {
-        self.brain_tick
+    pub fn tick(&self) -> i64 {
+        self.tick
     }
 
     fn receive_readout(&mut self) -> Result<Vec<f32>, BackendError> {
@@ -69,7 +69,7 @@ impl ZmqBrainBackend {
 
         match socket.recv_bytes(zmq::DONTWAIT) {
             Ok(buf) if buf.len() >= 8 && (buf.len() - 8).is_multiple_of(4) => {
-                self.brain_tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
+                self.tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
                 let num_floats = (buf.len() - 8) / 4;
                 self.last_readout.resize(num_floats, 0.0);
                 for i in 0..num_floats {
@@ -95,24 +95,24 @@ impl ZmqBrainBackend {
     }
 }
 
-impl Default for ZmqBrainBackend {
+impl Default for ZmqRuntimeBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl BackendConnector for ZmqBrainBackend {
-    /// Process a dynamic slice of input signals through the neural backend.
+impl RuntimeBackend for ZmqRuntimeBackend {
+    /// Process a dynamic slice of input signals through the compute backend.
     ///
     /// For ZMQ this ignores the `inputs` (the backend is a readout subscriber)
     /// and returns the latest packet or cached value.
     ///
     /// # Errors
     /// Returns `InitializationError` if the SUB socket is not connected.
-    fn process_signals(&mut self, _inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
+    fn process_batch(&mut self, _inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
-                "ZmqBrainBackend not initialized — call initialize() first".to_string(),
+                "ZmqRuntimeBackend not initialized — call initialize() first".to_string(),
             ));
         }
         self.receive_readout()
@@ -181,7 +181,7 @@ impl BackendConnector for ZmqBrainBackend {
     /// `CORPUS_IPC_ZMQ_READOUT_IPC` at runtime).
     fn reset(&mut self) -> Result<(), BackendError> {
         self.last_readout.clear();
-        self.brain_tick = 0;
+        self.tick = 0;
         self.initialized = false;
         self.sub_socket = None;
         println!("[zmq-ipc] Readout cache reset; will re-initialize on next call");
@@ -210,9 +210,9 @@ mod tests {
         let tick: i64 = 42_000;
         let buf = make_packet(tick, &readout);
 
-        let mut b = ZmqBrainBackend::new();
+        let mut b = ZmqRuntimeBackend::new();
         // Manually simulate receiving the packet
-        b.brain_tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
+        b.tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
         let num_floats = (buf.len() - 8) / 4;
         b.last_readout.resize(num_floats, 0.0);
         for i in 0..num_floats {
@@ -220,7 +220,7 @@ mod tests {
             b.last_readout[i] = f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
         }
 
-        assert_eq!(b.brain_tick, tick);
+        assert_eq!(b.tick, tick);
         assert_eq!(b.last_readout.len(), 20);
         for (i, val) in readout.iter().enumerate().take(20) {
             assert!((b.last_readout[i] - val).abs() < 1e-5);
@@ -229,12 +229,12 @@ mod tests {
 
     #[test]
     fn malformed_packet_does_not_mutate_state() {
-        let mut b = ZmqBrainBackend::new();
+        let mut b = ZmqRuntimeBackend::new();
         b.last_readout = vec![1.0, 2.0];
-        b.brain_tick = 100;
+        b.tick = 100;
 
         let initial_readout = b.last_readout.clone();
-        let initial_tick = b.brain_tick;
+        let initial_tick = b.tick;
 
         // A 5-byte garbage packet has an invalid length
         let bad_buf: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF, 0x00];
@@ -250,6 +250,6 @@ mod tests {
         }
 
         assert_eq!(b.last_readout, initial_readout);
-        assert_eq!(b.brain_tick, initial_tick);
+        assert_eq!(b.tick, initial_tick);
     }
 }
