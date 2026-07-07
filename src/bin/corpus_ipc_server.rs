@@ -17,8 +17,6 @@ type SharedBackend = Arc<Mutex<Box<dyn RuntimeBackend>>>;
 #[tokio::main]
 async fn main() {
     // Select backend type via env var (CORPUS_IPC_BACKEND_TYPE); default to Rust.
-    // Hard rename pass for service entrypoint - legacy fallback not kept
-    // per cleanup goals (addresses bot feedback on rename completeness).
     let backend_type = match std::env::var("CORPUS_IPC_BACKEND_TYPE").as_deref() {
         Ok("zmq") => {
             #[cfg(feature = "zmq")]
@@ -48,7 +46,6 @@ async fn main() {
         .layer(Extension(backend));
 
     // Bind address (0.0.0.0:8080 by default).
-    // Hard rename pass: only CORPUS_IPC_BIND used (legacy fallback removed per goals).
     let addr: SocketAddr = std::env::var("CORPUS_IPC_BIND")
         .unwrap_or_else(|_| "0.0.0.0:8080".into())
         .parse()
