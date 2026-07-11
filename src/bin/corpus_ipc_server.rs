@@ -9,10 +9,10 @@ use tokio::net::TcpListener;
 
 use axum::{Json, Router, extract::Extension, routing::post};
 use corpus_ipc::trait_def::BackendFactory;
-use corpus_ipc::{BackendError, BackendType, RuntimeBackend};
+use corpus_ipc::{BackendError, BackendType, IpcBackend};
 use serde::{Deserialize, Serialize};
 
-type SharedBackend = Arc<Mutex<Box<dyn RuntimeBackend>>>;
+type SharedBackend = Arc<Mutex<Box<dyn IpcBackend>>>;
 
 #[tokio::main]
 async fn main() {
@@ -21,7 +21,7 @@ async fn main() {
         Ok("zmq") => {
             #[cfg(feature = "zmq")]
             {
-                BackendType::ZmqRuntime
+                BackendType::ZmqIpc
             }
             #[cfg(not(feature = "zmq"))]
             {

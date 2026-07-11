@@ -12,7 +12,7 @@ Define the target boundary for `corpus-ipc` as a reusable runtime/IPC crate that
 
 - Owns protocol models and transport-level integration points.
 - Exposes generic runtime/IPC abstractions that are not tied to a specific product domain.
-- Removes legacy trader/NERO-specific wording from the planning target.
+- Removes legacy domain-specific wording from the planning target.
 
 ## Owns
 
@@ -28,7 +28,7 @@ Define the target boundary for `corpus-ipc` as a reusable runtime/IPC crate that
 
 `corpus-ipc` should not own:
 
-- Trading strategy logic, order lifecycle, exchange connectivity, or portfolio rules.
+- Application strategy logic, external service lifecycle, or product policy.
 - Supervisor/app orchestration responsibilities (process lifecycle, deployment topology, product policy).
 - Product-domain branding vocabulary in core trait/type names.
 - Cross-repo business semantics that are not required for generic IPC/runtime boundaries.
@@ -49,24 +49,24 @@ To ensure the plan is grounded in the actual crate surface, this revision explic
 
 Observation:
 
-- No `TraderBackend` type, trait, or public API symbol remains (the reference in the error module doc comment has been updated to the generic `BackendConnector` per #4).
+- The legacy domain-specific backend trait name has been replaced by the generic `IpcBackend` surface.
 - The source audit list has been expanded to include `src/error.rs`.
-- Legacy/domain wording still appears through neural/brain/spine/NERO terminology in public traits, exported models, backend names, env vars, and service binary naming.
+- Previously identified domain wording has been migrated to generic IPC terminology in public traits, exported models, backend names, env vars, and service binary naming.
 
-## Legacy wording inventory
+## Completed generic naming inventory
 
-The following names currently leak legacy naming into the generic IPC surface (verified from the source files above):
+The following public naming migrations define the generic IPC surface (verified from the source files above):
 
-1. `NeroManifoldSnapshot` model type and re-export.
-2. `ZmqBrainBackend` backend naming (`Brain` is product/domain-coded wording).
-3. `SpineMessage` naming (biological/product-coded framing instead of neutral IPC envelope terms).
-4. `process_signals` in `BackendConnector` trait method (domain-coded behavior wording).
+1. Snapshot model type and re-export now use `NeuromodulatorSnapshot`.
+2. ZMQ backend naming now uses `ZmqIpcBackend`.
+3. Message enum naming now uses `IpcMessage`.
+4. Batch processing method naming now uses `process_batch` on `IpcBackend`.
 
-**Note on service/entrypoint rename (this PR):** The service binary (`src/bin/corpus_ipc_server.rs`), env var names (`CORPUS_IPC_BACKEND_TYPE`, `CORPUS_IPC_BIND`, `CORPUS_IPC_ZMQ_READOUT_IPC`), and default endpoint were hard-renamed with no legacy aliases kept in this implementation pass. The items above (1-4) remain for subsequent type/trait migration stages. Downstream consumers (e.g. Julia publishers) and deployment configs must migrate to the new names/default path.
+**Note on service/entrypoint rename (this PR):** The service binary (`src/bin/corpus_ipc_server.rs`), env var names (`CORPUS_IPC_BACKEND_TYPE`, `CORPUS_IPC_BIND`, `CORPUS_IPC_ZMQ_READOUT_IPC`), and default endpoint were hard-renamed with no legacy aliases kept in this implementation pass. Downstream consumers and deployment configs must migrate to the new names/default path.
 
 Additional cleanup targets discovered in metadata/docs (deferred to later stage; not changed in this PR's service/entrypoint rename pass):
 
-- README references to neural/hybrid-specific naming in public API lists.
+- README references to product-specific naming in public API lists.
 
 ## Public API target (planning)
 
@@ -79,11 +79,11 @@ Target API shape for a generic runtime/IPC core:
 
 Representative naming direction (non-binding planning examples):
 
-- `BackendConnector` (was NeuralBackend) -> `RuntimeBackend`
-- `process_signals` -> `process_batch` (or equivalent neutral verb)
-- `SpineMessage` -> `RuntimeMessage` / `Envelope`
-- `ZmqBrainBackend` -> `ZmqRuntimeBackend`
-- `NeroManifoldSnapshot` -> `RuntimeSnapshot` (or domain-neutral payload name)
+- Legacy backend connector name -> `IpcBackend`
+- legacy process method name -> `process_batch`
+- Legacy message enum name -> `IpcMessage` / `Envelope`
+- Legacy ZMQ backend name -> `ZmqIpcBackend`
+- Legacy snapshot name -> `NeuromodulatorSnapshot` (or domain-neutral payload name)
 
 ## Dependency boundary target
 
@@ -103,7 +103,7 @@ Boundary rule:
 2. **Serialization compatibility**: renaming message/type fields could impact existing consumers if wire schema changes.
 3. **Documentation drift**: README and usage examples can become stale during staged renaming.
 4. **Feature split ambiguity**: unclear separation between pure schema crate and runtime transport crate may create churn.
-5. **Service binary/env/default hard rename**: This PR executed a hard cutover for the server binary target name, env var keys, and ZMQ default path (no legacy fallbacks in code). Deployment scripts, Dockerfiles, systemd units, CI, and external publishers (e.g. using old default IPC path or prior env var names) must be updated concurrently. Cargo bin target implicitly changes from old filename-based name to `corpus_ipc_server`.
+5. **Service binary/env/default hard rename**: This PR executed a hard cutover for the server binary target name, env var keys, and ZMQ default path (no legacy fallbacks in code). Deployment scripts, Dockerfiles, systemd units, CI, and external publishers using previous default IPC paths or env var names must be updated concurrently. Cargo bin target implicitly changes from old filename-based name to `corpus_ipc_server`.
 
 ## Open questions
 

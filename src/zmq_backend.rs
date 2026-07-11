@@ -4,7 +4,7 @@
 //!
 //! Requires feature `zmq`.
 
-use crate::{BackendError, RuntimeBackend};
+use crate::{BackendError, IpcBackend};
 
 /// Default ZeroMQ IPC endpoint for receiving compute data packets.
 /// Can be overridden via environment variable `CORPUS_IPC_ZMQ_READOUT_IPC`.
@@ -29,7 +29,7 @@ unsafe impl Sync for SafeSocket {}
 /// [0..8]   tick     i64 LE      monotonic tick counter
 /// [8..]    readout  N×f32 LE    lobe outputs
 /// ```
-pub struct ZmqRuntimeBackend {
+pub struct ZmqIpcBackend {
     context: zmq::Context,
     sub_socket: Option<SafeSocket>,
     initialized: bool,
@@ -37,7 +37,7 @@ pub struct ZmqRuntimeBackend {
     pub tick: i64,
 }
 
-impl ZmqRuntimeBackend {
+impl ZmqIpcBackend {
     /// Create a new uninitialized ZMQ backend.
     ///
     /// Socket and subscription are established only on the first successful
@@ -95,13 +95,13 @@ impl ZmqRuntimeBackend {
     }
 }
 
-impl Default for ZmqRuntimeBackend {
+impl Default for ZmqIpcBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RuntimeBackend for ZmqRuntimeBackend {
+impl IpcBackend for ZmqIpcBackend {
     /// Process a dynamic slice of input signals through the compute backend.
     ///
     /// For ZMQ this ignores the `inputs` (the backend is a readout subscriber)
@@ -112,7 +112,7 @@ impl RuntimeBackend for ZmqRuntimeBackend {
     fn process_batch(&mut self, _inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
-                "ZmqRuntimeBackend not initialized — call initialize() first".to_string(),
+                "ZmqIpcBackend not initialized — call initialize() first".to_string(),
             ));
         }
         self.receive_readout()
@@ -160,7 +160,7 @@ impl RuntimeBackend for ZmqRuntimeBackend {
     /// Persist current model state (delegated to remote if supported).
     /// Current ZMQ implementation is read-only; this is a no-op.
     fn save_state(&self, _model_path: &str) -> Result<(), BackendError> {
-        println!("[zmq-ipc] State lives in the external compute process (CUDA VRAM)");
+        println!("[zmq-ipc] State lives in the external compute process");
         Ok(())
     }
 
@@ -210,7 +210,7 @@ mod tests {
         let tick: i64 = 42_000;
         let buf = make_packet(tick, &readout);
 
-        let mut b = ZmqRuntimeBackend::new();
+        let mut b = ZmqIpcBackend::new();
         // Manually simulate receiving the packet
         b.tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
         let num_floats = (buf.len() - 8) / 4;
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn malformed_packet_does_not_mutate_state() {
-        let mut b = ZmqRuntimeBackend::new();
+        let mut b = ZmqIpcBackend::new();
         b.last_readout = vec![1.0, 2.0];
         b.tick = 100;
 

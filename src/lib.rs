@@ -7,7 +7,7 @@
 //! Provides a unified interface for various backends:
 //!
 //! - [`RustBackend`] — pure-Rust native backend (no external deps, always available)
-//! - [`ZmqRuntimeBackend`] — IPC backend via ZMQ SUB socket (feature `zmq`)
+//! - `ZmqIpcBackend` — IPC backend via ZMQ SUB socket (feature `zmq`)
 
 pub mod error;
 pub mod models;
@@ -22,11 +22,11 @@ pub use error::BackendError;
 /// Re-export all public data models used on the wire.
 pub use models::{
     BatchMetadata, ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate,
-    RuntimeMessage, RuntimeSnapshot, SpikeBatch, SpikeEvent, TraceBatch, TraceData,
+    IpcMessage, NeuromodulatorSnapshot, SpikeBatch, SpikeEvent, TraceBatch, TraceData,
 };
 /// Re-export the core trait and factory.
 pub use rust_backend::RustBackend;
-pub use trait_def::{BackendType, HybridFlowBackend, RuntimeBackend};
+pub use trait_def::{BackendType, HybridFlowBackend, IpcBackend};
 
 #[cfg(feature = "zmq")]
-pub use zmq_backend::ZmqRuntimeBackend;
+pub use zmq_backend::ZmqIpcBackend;

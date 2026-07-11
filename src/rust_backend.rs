@@ -2,7 +2,7 @@
 
 //! Pure-Rust native backend — no external dependencies.
 
-use crate::{BackendError, RuntimeBackend};
+use crate::{BackendError, IpcBackend};
 
 /// Rust-native compute backend.
 ///
@@ -10,7 +10,7 @@ use crate::{BackendError, RuntimeBackend};
 /// into a positive/negative pair. Channel `i` → `output[i*2]` (positive),
 /// channel `i` → `output[i*2+1]` (negative magnitude).
 ///
-/// Useful as a smoke-test stub and software fallback when Julia / ZMQ is
+/// Useful as a smoke-test stub and software fallback when external IPC is
 /// unavailable.
 pub struct RustBackend {
     initialized: bool,
@@ -29,7 +29,7 @@ impl Default for RustBackend {
     }
 }
 
-impl RuntimeBackend for RustBackend {
+impl IpcBackend for RustBackend {
     fn process_batch(&mut self, inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
@@ -37,7 +37,7 @@ impl RuntimeBackend for RustBackend {
             ));
         }
 
-        // Push-pull encoding: positive → bull channel; negative → bear channel.
+        // Push-pull encoding: positive inputs map to even channels; negative magnitudes map to odd channels.
         let mut output = vec![0.0f32; inputs.len() * 2];
         for i in 0..inputs.len() {
             let val = inputs[i];
@@ -86,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn positive_input_goes_to_bull_channel() {
+    fn positive_input_goes_to_even_channel() {
         let mut b = RustBackend::new();
         b.initialize(None).unwrap();
         let inputs = vec![0.8, 0.0, 0.0];
@@ -96,13 +96,13 @@ mod tests {
     }
 
     #[test]
-    fn negative_input_goes_to_bear_channel() {
+    fn negative_input_goes_to_odd_channel() {
         let mut b = RustBackend::new();
         b.initialize(None).unwrap();
         let inputs = vec![0.0, 0.0, -0.5];
         let out = b.process_batch(&inputs).unwrap();
-        assert_eq!(out[4], 0.0); // bull channel for ch2
-        assert!((out[5] - 0.5).abs() < 1e-5); // bear channel
+        assert_eq!(out[4], 0.0); // positive channel for ch2
+        assert!((out[5] - 0.5).abs() < 1e-5); // negative-magnitude channel
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 //! Backend error type.
 
-/// Errors that may be returned by any `RuntimeBackend` implementation.
+/// Errors that may be returned by any `IpcBackend` implementation.
 ///
 /// These cover initialization, processing, model persistence, IPC communication,
 /// and invalid caller input. The inner `String` carries a human-readable
