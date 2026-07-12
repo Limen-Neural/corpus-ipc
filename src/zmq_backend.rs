@@ -160,7 +160,7 @@ impl IpcBackend for ZmqIpcBackend {
     /// Persist current model state (delegated to remote if supported).
     /// Current ZMQ implementation is read-only; this is a no-op.
     fn save_state(&self, _model_path: &str) -> Result<(), BackendError> {
-        println!("[zmq-ipc] State lives in the external compute process");
+        // State lives in the external compute process; this is a no-op.
         Ok(())
     }
 
