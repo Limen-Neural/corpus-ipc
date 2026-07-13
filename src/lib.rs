@@ -24,9 +24,9 @@ pub use models::{
     BatchMetadata, ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate,
     IpcMessage, NeuromodulatorSnapshot, SpikeBatch, SpikeEvent, TraceBatch, TraceData,
 };
-/// Re-export the core trait and factory.
+/// Re-export the core trait, factory, and backend.
 pub use rust_backend::RustBackend;
-pub use trait_def::{BackendType, HybridFlowBackend, IpcBackend};
+pub use trait_def::{BackendFactory, BackendType, HybridFlowBackend, IpcBackend};
 
 #[cfg(feature = "zmq")]
 pub use zmq_backend::ZmqIpcBackend;
