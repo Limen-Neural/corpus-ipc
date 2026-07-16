@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! `RuntimeBackend` trait and `BackendType` enumeration.
+//! `IpcBackend` trait and `BackendType` enumeration.
 
 use crate::{BackendError, EmbeddingBatch, GradientBatch, RustBackend, SpikeBatch, TraceBatch};
 
 /// Unified interface for compute processing backends.
 ///
 /// Abstracts over the compute processing layer, allowing different backend
-/// implementations (Rust-native, Julia jlrs, ZMQ IPC) to be used
+/// implementations (Rust-native, native or network IPC) to be used
 /// interchangeably.
 ///
 /// # Output contract
 ///
 /// `process_batch` returns a `Vec<f32>` containing the processed outputs.
 /// The exact number of elements depends on the backend implementation.
-pub trait RuntimeBackend: Send + Sync {
+pub trait IpcBackend: Send + Sync {
     /// Process a dynamic slice of input signals through the compute backend.
     ///
     /// # Arguments
@@ -45,8 +45,8 @@ pub trait RuntimeBackend: Send + Sync {
 /// Optional high-level hybrid flow interface for message-oriented IPC backends.
 ///
 /// Backends that support structured spike/embedding exchange can implement this
-/// trait in addition to `RuntimeBackend`. It is optional; most simple
-/// backends only need `RuntimeBackend`.
+/// trait in addition to `IpcBackend`. It is optional; most simple
+/// backends only need `IpcBackend`.
 pub trait HybridFlowBackend: Send + Sync {
     /// Send a spike batch over the transport.
     fn send_spikes(&mut self, spikes: SpikeBatch) -> Result<(), BackendError>;
@@ -66,33 +66,33 @@ pub trait HybridFlowBackend: Send + Sync {
 /// Backend implementation selector.
 ///
 /// Used with `BackendFactory::create` to choose the concrete implementation
-/// at runtime. `Rust` is always available; `ZmqRuntime` requires the `zmq` feature.
+/// at runtime. `Rust` is always available; `ZmqIpc` requires the `zmq` feature.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum BackendType {
     /// Pure-Rust native backend (always available, no external deps).
     #[default]
     Rust,
-    /// Julia IPC backend via ZMQ SUB socket (requires feature `zmq`).
+    /// IPC backend via ZMQ SUB socket (requires feature `zmq`).
     #[cfg(feature = "zmq")]
-    ZmqRuntime,
+    ZmqIpc,
 }
 
-/// Factory for creating `RuntimeBackend` instances.
+/// Factory for creating `IpcBackend` instances.
 pub struct BackendFactory;
 
 impl BackendFactory {
     /// Create a boxed backend of the requested `BackendType`.
     ///
-    /// The returned value implements `RuntimeBackend`. For `ZmqRuntime`, the
+    /// The returned value implements `IpcBackend`. For `ZmqIpc`, the
     /// crate must be compiled with the `zmq` feature or this will panic at
     /// construction time (compile-time cfg guards the variant).
     ///
     /// Callers must still invoke `initialize` before `process_batch`.
-    pub fn create(backend_type: BackendType) -> Box<dyn RuntimeBackend> {
+    pub fn create(backend_type: BackendType) -> Box<dyn IpcBackend> {
         match backend_type {
             BackendType::Rust => Box::new(RustBackend::new()),
             #[cfg(feature = "zmq")]
-            BackendType::ZmqRuntime => Box::new(crate::ZmqRuntimeBackend::new()),
+            BackendType::ZmqIpc => Box::new(crate::ZmqIpcBackend::new()),
         }
     }
 }

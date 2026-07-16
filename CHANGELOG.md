@@ -16,7 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Switched license from GPL-3.0-or-later to dual MIT/Apache-2.0 for broader adoptability as core IPC infrastructure (#11).
-- Updated stale `TraderBackend` reference in error docs to generic `RuntimeBackend` (#4).
+- **Breaking rename**: Generalized IPC terminology across the public API (#8):
+  - `RuntimeBackend` → `IpcBackend`
+  - `RuntimeMessage` → `IpcMessage`
+  - `RuntimeSnapshot` → `NeuromodulatorSnapshot`
+  - `ZmqRuntimeBackend` → `ZmqIpcBackend`
+  - `BackendType::ZmqRuntime` → `BackendType::ZmqIpc`
+  - Server binary target renamed to `corpus_ipc_server`
+  - Environment variables renamed: `CORPUS_IPC_BACKEND_TYPE`, `CORPUS_IPC_BIND`, `CORPUS_IPC_ZMQ_READOUT_IPC`
+  - Downstream users must update all renamed types, enum variants, and environment contract usage.
 - Cleaned legacy terminology in zmq logs for neutral boundary (as part of combined #4 work).
 
 ### Fixed

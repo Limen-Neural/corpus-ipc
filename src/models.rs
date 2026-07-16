@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 /// - Hasselmo, M. E. (1999). Neuromodulation: acetylcholine and memory
 ///   consolidation. *Trends in Cognitive Sciences*, 3(9), 351–359.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RuntimeSnapshot {
+pub struct NeuromodulatorSnapshot {
     /// Tick counter from the remote compute (monotonically increasing).
     pub tick: i64,
     /// Dopamine level (reward / STDP learning-rate gate). Range [0, 1].
@@ -37,7 +37,7 @@ pub struct RuntimeSnapshot {
     pub tempo: f32,
 }
 
-impl RuntimeSnapshot {
+impl NeuromodulatorSnapshot {
     /// Parse from the 4 generic score floats in bytes `[72..88]` of a generic packet.
     pub fn from_scores(tick: i64, scores: &[f32; 4]) -> Self {
         Self {
@@ -50,21 +50,21 @@ impl RuntimeSnapshot {
     }
 }
 
-/// Core message enum for Rust<->Julia cross-process communication.
+/// Core message enum for cross-process IPC.
 ///
 /// Messages are separated into:
-/// - Input from Rust to Julia (spikes, embeddings, config)
-/// - Output from Julia to Rust (gradients, traces, training status)
+/// - Input messages (spikes, embeddings, config)
+/// - Output messages (gradients, traces, training status)
 /// - Control messages (shutdown, ping)
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum RuntimeMessage {
-    // Input from Rust to Julia
+pub enum IpcMessage {
+    // Input messages
     Spikes(SpikeBatch),
     Embeddings(EmbeddingBatch),
     Loss(f32),
     ConfigUpdate(ConfigPayload),
 
-    // Output from Julia to Rust
+    // Output messages
     GradientUpdate(GradientBatch),
     EligibilityTraces(TraceBatch),
     TrainingComplete,
@@ -113,7 +113,7 @@ pub struct EmbeddingBatch {
     pub sequence_length: usize,
 }
 
-/// Gradient update batch from Julia training algorithms.
+/// Gradient update batch from external training or optimization algorithms.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct GradientBatch {
     /// Session ID for routing back to correct experiment.

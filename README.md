@@ -4,22 +4,22 @@
 
 Inter-Process Communication (IPC) library for bridging Rust to external compute engines.
 
-`corpus-ipc` is the schema and transport layer for hybrid Rust↔Julia workflows. It provides backend abstractions for local/native execution and optional ZeroMQ IPC, plus canonical wire message models used across services.
+`corpus-ipc` is the schema and transport layer for cross-process compute workflows. It provides backend abstractions for local/native execution and optional ZeroMQ IPC, plus canonical wire message models used across services.
 
 ## Features
 
-- `RuntimeBackend` trait for backend-agnostic signal processing (was BackendConnector)
+- `IpcBackend` trait for backend-agnostic signal processing
 - `RustBackend` reference backend (always available)
-- `ZmqRuntimeBackend` backend via ZMQ SUB socket (feature `zmq`)
+- `ZmqIpcBackend` backend via ZMQ SUB socket (feature `zmq`)
 - Canonical protocol models:
-  - `RuntimeMessage`
+  - `IpcMessage`
   - `SpikeBatch`, `SpikeEvent`
   - `EmbeddingBatch`
   - `GradientBatch`, `GradientUpdate`
   - `TraceBatch`, `TraceData`
   - `ConfigPayload`, `ConfigValue`, `BatchMetadata`
 - `HybridFlowBackend` trait for message-oriented hybrid transports
-- `RuntimeSnapshot` for parsed runtime readout payloads
+- `NeuromodulatorSnapshot` for parsed runtime readout payloads
 
 ## Installation
 
@@ -34,7 +34,7 @@ corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc" }
 ## Quick Start
 
 ```rust
-use corpus_ipc::{BackendType, RuntimeBackend};
+use corpus_ipc::{BackendType, IpcBackend};
 use corpus_ipc::trait_def::BackendFactory;
 
 let mut backend = BackendFactory::create(BackendType::Rust);
@@ -54,19 +54,19 @@ println!("{}", outputs.len());
 Use these re-exports directly from crate root:
 
 ```rust
-use corpus_ipc::{RuntimeMessage, SpikeBatch, EmbeddingBatch};
+use corpus_ipc::{IpcMessage, SpikeBatch, EmbeddingBatch};
 ```
 
 ## Crate Exports
 
 - Backends and traits:
-  - `RuntimeBackend`, `HybridFlowBackend`
+  - `IpcBackend`, `HybridFlowBackend`
   - `BackendType`
   - `RustBackend`
-  - `ZmqRuntimeBackend` (when `zmq` feature enabled)
+  - `ZmqIpcBackend` (when `zmq` feature enabled)
 - Models:
-  - `RuntimeMessage` and all batch/config/trace/gradient payload structs
-  - `RuntimeSnapshot`
+  - `IpcMessage` and all batch/config/trace/gradient payload structs
+  - `NeuromodulatorSnapshot`
 
 ## License
 
