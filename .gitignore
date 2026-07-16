@@ -1,4 +1,59 @@
+# --- Rust ---
+/target/
+Cargo.lock
+**/*.crate
+*.rlib
+*.rs.bk
+
+# --- Project Generated Files ---
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+
+# CI / test log artifacts - generated in root by CI runs
+*.log
+test_output.txt
+
+# Coverage artifacts 
+lcov.info
+junit.xml
+
+# --- IDEs & Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- AI Tool Local/Ephemeral (no clutter) ---
+.kilo/worktrees/
+.kilocode/worktrees/
+.devin/cache/
+.mimocode/
+.cursor/
+.cursorignore
+.codex/
+.cline/
+
+# --- Negations: Force-commit the good stuff ---
+# Your custom SNN skills
+!.kilo/skills/**
+!.kilo/tui.jsonc
+!.devin/blueprint.yaml
+!kilocodeignore
+
+# --- Standard dev + your data ---
+node_modules/
+dist/
+build/
+.env*
+*.env/
+.cache/
+
+
+# --- Planning files ---
+.mimocode/plans/
+.beads/
 /target
 docs/plans/
-.kilo/
-.mimocode/
