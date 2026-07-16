@@ -27,7 +27,7 @@ junit.xml
 *~
 
 # --- AI Tool Local/Ephemeral (no clutter) ---
-.kilo/worktrees/
+.kilo/
 .kilocode/worktrees/
 .devin/cache/
 .mimocode/
