@@ -1,0 +1,17 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "mcp": {
+    "oci-api-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/oracle/mcp.git@e8d36d5375fd17872f884cacc395a622812b1b31#subdirectory=src/oci-api-mcp-server",
+        "oracle.oci-api-mcp-server"
+      ],
+      "environment": {
+        "OCI_CONFIG_PROFILE": "{{OCI_CONFIG_PROFILE}}"
+      }
+    }
+  }
+}
