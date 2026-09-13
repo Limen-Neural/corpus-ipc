@@ -1,0 +1,21 @@
+src/models.rs
+  s_88ec628d0d5775::t_173b98c5c14893 177
+  s_88ec628d0d5775::t_32e0aa75d2d3ea 628-643
+  s_88ec628d0d5775::t_0f7cc7d31f01e6 169-175,214-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f15a6f1e553654ba2bb5ed9556dec3aae3e94469",
+  "prompts": {},
+  "sessions": {
+    "s_88ec628d0d5775": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "678833ed-e199-403d-bc49-19d110781764",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Raul Cardenas Montoya <montoyaraul34@gmail.com>"
+    }
+  }
+}
