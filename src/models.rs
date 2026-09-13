@@ -166,10 +166,15 @@ pub enum IpcMessage {
 /// with no way to distinguish "sensor read zero" from "no data this tick."
 ///
 /// Fields are public (matching this crate's other wire batches, e.g.
-/// [`SpikeBatch`]), so the `valid_mask`-length invariant above is not
-/// enforced by construction. Call [`StimulusBatch::validate`] after building
-/// or deserializing one to check it explicitly.
+/// [`SpikeBatch`]) for direct Rust construction, but **deserialization
+/// enforces the `valid_mask`-length invariant**: a JSON/wire payload with a
+/// `valid_mask` whose length differs from `values.len()` fails to
+/// deserialize (via [`StimulusBatch::validate`] through a `TryFrom` shadow
+/// type), rather than silently producing an inconsistent instance. Call
+/// [`StimulusBatch::validate`] explicitly after constructing one directly in
+/// Rust (which bypasses deserialization) to get the same check.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(try_from = "StimulusBatchWire")]
 pub struct StimulusBatch {
     /// Optional session ID for concurrent experiment isolation.
     pub session_id: Option<String>,
@@ -203,6 +208,38 @@ impl StimulusBatch {
             ));
         }
         Ok(())
+    }
+}
+
+/// Deserialization-only shadow of [`StimulusBatch`] with the identical wire
+/// shape. `StimulusBatch`'s real `Deserialize` impl (below) goes through
+/// this type and [`StimulusBatch::validate`] so a malformed `valid_mask`
+/// length is rejected at deserialization instead of producing an
+/// inconsistent instance.
+#[derive(Deserialize)]
+struct StimulusBatchWire {
+    session_id: Option<String>,
+    batch_id: u64,
+    timestamp: u64,
+    values: Vec<f32>,
+    valid_mask: Option<Vec<bool>>,
+    metadata: Option<BatchMetadata>,
+}
+
+impl TryFrom<StimulusBatchWire> for StimulusBatch {
+    type Error = String;
+
+    fn try_from(wire: StimulusBatchWire) -> Result<Self, Self::Error> {
+        let batch = StimulusBatch {
+            session_id: wire.session_id,
+            batch_id: wire.batch_id,
+            timestamp: wire.timestamp,
+            values: wire.values,
+            valid_mask: wire.valid_mask,
+            metadata: wire.metadata,
+        };
+        batch.validate()?;
+        Ok(batch)
     }
 }
 
@@ -585,6 +622,23 @@ mod tests {
             "error should mention values length: {err}"
         );
         assert!(err.contains('2'), "error should mention mask length: {err}");
+    }
+
+    #[test]
+    fn stimulus_batch_deserialize_rejects_mismatched_mask_length() {
+        let json = serde_json::json!({
+            "session_id": null,
+            "batch_id": 1,
+            "timestamp": 0,
+            "values": [0.0, 1.0],
+            "valid_mask": [true],
+            "metadata": null
+        });
+        let result: Result<StimulusBatch, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "a valid_mask shorter than values must fail to deserialize"
+        );
     }
 
     #[test]
