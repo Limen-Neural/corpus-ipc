@@ -45,6 +45,7 @@ use serde::{Deserialize, Serialize};
 /// - Hasselmo, M. E. (1999). Neuromodulation: acetylcholine and memory
 ///   consolidation. *Trends in Cognitive Sciences*, 3(9), 351–359.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "NeuromodulatorSnapshotWire")]
 pub struct NeuromodulatorSnapshot {
     /// Tick counter from the remote compute (monotonically increasing).
     pub tick: i64,
@@ -56,6 +57,37 @@ pub struct NeuromodulatorSnapshot {
     pub acetylcholine: f32,
     /// Tempo scale (clock-driven timing; 1.0 = nominal). Range [0.5, 2.0].
     pub tempo: f32,
+}
+
+/// Deserialization-only shadow of [`NeuromodulatorSnapshot`] with the
+/// identical wire shape. `NeuromodulatorSnapshot`'s real `Deserialize` impl
+/// goes through this type and [`NeuromodulatorSnapshot::validate`] so an
+/// out-of-range or non-finite field is rejected at deserialization instead
+/// of silently reaching consumers (this type is reachable via
+/// [`IpcMessage::Neuromodulators`]).
+#[derive(Deserialize)]
+struct NeuromodulatorSnapshotWire {
+    tick: i64,
+    dopamine: f32,
+    cortisol: f32,
+    acetylcholine: f32,
+    tempo: f32,
+}
+
+impl TryFrom<NeuromodulatorSnapshotWire> for NeuromodulatorSnapshot {
+    type Error = String;
+
+    fn try_from(wire: NeuromodulatorSnapshotWire) -> Result<Self, Self::Error> {
+        let snapshot = NeuromodulatorSnapshot {
+            tick: wire.tick,
+            dopamine: wire.dopamine,
+            cortisol: wire.cortisol,
+            acetylcholine: wire.acetylcholine,
+            tempo: wire.tempo,
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
+    }
 }
 
 impl NeuromodulatorSnapshot {
@@ -72,12 +104,13 @@ impl NeuromodulatorSnapshot {
 
     /// Check the documented ranges for each field.
     ///
-    /// Fields are public and this type is now reachable via
-    /// [`IpcMessage::Neuromodulators`], so a deserialized instance is not
-    /// guaranteed to satisfy the documented ranges (`dopamine`, `cortisol`,
-    /// `acetylcholine` in `[0, 1]`; `tempo` in `[0.5, 2.0]`) or even to be
-    /// finite. Call this after building or deserializing one to check
-    /// explicitly.
+    /// Fields are public for direct Rust construction, so a value built via
+    /// struct literal is not guaranteed to satisfy the documented ranges
+    /// (`dopamine`, `cortisol`, `acetylcholine` in `[0, 1]`; `tempo` in
+    /// `[0.5, 2.0]`) or even to be finite. Deserialization (this type is
+    /// reachable via [`IpcMessage::Neuromodulators`]) already enforces this
+    /// check via a `TryFrom` shadow type; call this explicitly only after
+    /// constructing one directly in Rust.
     pub fn validate(&self) -> Result<(), String> {
         for (name, value, min, max) in [
             ("dopamine", self.dopamine, 0.0, 1.0),
@@ -491,6 +524,40 @@ mod tests {
         assert!(
             err.contains("dopamine"),
             "error should name the field: {err}"
+        );
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_deserialize_rejects_out_of_range_value() {
+        let json = serde_json::json!({
+            "tick": 1,
+            "dopamine": 0.5,
+            "cortisol": 0.5,
+            "acetylcholine": 0.5,
+            "tempo": 3.0
+        });
+        let result: Result<NeuromodulatorSnapshot, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "an out-of-range tempo must fail to deserialize"
+        );
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_try_from_wire_rejects_non_finite_value() {
+        // JSON has no NaN/Infinity literal, so this exercises the TryFrom
+        // conversion that backs Deserialize directly, for wire formats
+        // (e.g. bincode) that can represent a non-finite f32.
+        let wire = NeuromodulatorSnapshotWire {
+            tick: 1,
+            dopamine: f32::NAN,
+            cortisol: 0.5,
+            acetylcholine: 0.5,
+            tempo: 1.0,
+        };
+        assert!(
+            NeuromodulatorSnapshot::try_from(wire).is_err(),
+            "a non-finite dopamine must fail the TryFrom conversion"
         );
     }
 
