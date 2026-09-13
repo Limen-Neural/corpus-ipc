@@ -69,6 +69,35 @@ impl NeuromodulatorSnapshot {
             tempo: scores[3],
         }
     }
+
+    /// Check the documented ranges for each field.
+    ///
+    /// Fields are public and this type is now reachable via
+    /// [`IpcMessage::Neuromodulators`], so a deserialized instance is not
+    /// guaranteed to satisfy the documented ranges (`dopamine`, `cortisol`,
+    /// `acetylcholine` in `[0, 1]`; `tempo` in `[0.5, 2.0]`) or even to be
+    /// finite. Call this after building or deserializing one to check
+    /// explicitly.
+    pub fn validate(&self) -> Result<(), String> {
+        for (name, value, min, max) in [
+            ("dopamine", self.dopamine, 0.0, 1.0),
+            ("cortisol", self.cortisol, 0.0, 1.0),
+            ("acetylcholine", self.acetylcholine, 0.0, 1.0),
+            ("tempo", self.tempo, 0.5, 2.0),
+        ] {
+            if !value.is_finite() {
+                return Err(format!(
+                    "NeuromodulatorSnapshot: {name} is not finite: {value}"
+                ));
+            }
+            if value < min || value > max {
+                return Err(format!(
+                    "NeuromodulatorSnapshot: {name} ({value}) out of documented range [{min}, {max}]"
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Core message enum for cross-process IPC.
@@ -92,7 +121,7 @@ pub enum IpcMessage {
     /// invalid/missing-channel semantics.
     Stimuli(StimulusBatch),
     /// Typed neuromodulator ingress, replacing an unstructured float tail.
-    /// See [`NeuromodulatorSnapshot`].
+    /// See [`NeuromodulatorSnapshot`] and [`NeuromodulatorSnapshot::validate`].
     Neuromodulators(NeuromodulatorSnapshot),
     Loss(f32),
     ConfigUpdate(ConfigPayload),
@@ -396,8 +425,36 @@ mod tests {
             dopamine: 0.4,
             cortisol: 0.3,
             acetylcholine: 0.2,
-            tempo: 0.1,
+            tempo: 1.0,
         }
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_validate_accepts_in_range_values() {
+        assert!(sample_neuromodulator_snapshot().validate().is_ok());
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_validate_rejects_out_of_range_value() {
+        let mut snap = sample_neuromodulator_snapshot();
+        snap.tempo = 3.0; // outside documented [0.5, 2.0]
+        let err = snap
+            .validate()
+            .expect_err("out-of-range tempo must fail validation");
+        assert!(err.contains("tempo"), "error should name the field: {err}");
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_validate_rejects_non_finite_value() {
+        let mut snap = sample_neuromodulator_snapshot();
+        snap.dopamine = f32::NAN;
+        let err = snap
+            .validate()
+            .expect_err("non-finite dopamine must fail validation");
+        assert!(
+            err.contains("dopamine"),
+            "error should name the field: {err}"
+        );
     }
 
     fn sample_trace_batch() -> TraceBatch {
