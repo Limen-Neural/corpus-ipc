@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `StimulusBatch` typed wire type and `IpcMessage::Stimuli` / `IpcMessage::Neuromodulators`
+  variants for canonical, domain-neutral runtime stimulus and neuromodulator
+  ingress (RM-1140, #27). Replaces the need for downstream services
+  (`thalamic-relay`, `brainstem-daemon`) to use bespoke UDP JSON or private
+  packet structs. Stimulus channel width is not fixed by this crate, and an
+  optional `valid_mask` lets a channel be marked invalid/missing for a tick
+  instead of silently reading as `0.0`.
 - GitHub Actions CI workflow for automated validation (fmt, clippy, build, test) (#10).
 - Deprecated compatibility aliases after the #20 IPC rename (RM-334, #13, LIM-169):
   - `RuntimeBackend` → `IpcBackend`

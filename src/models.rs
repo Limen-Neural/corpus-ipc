@@ -44,7 +44,7 @@ use serde::{Deserialize, Serialize};
 ///   *Nature Reviews Neuroscience*, 10(6), 410–422.
 /// - Hasselmo, M. E. (1999). Neuromodulation: acetylcholine and memory
 ///   consolidation. *Trends in Cognitive Sciences*, 3(9), 351–359.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NeuromodulatorSnapshot {
     /// Tick counter from the remote compute (monotonically increasing).
     pub tick: i64,
@@ -74,7 +74,7 @@ impl NeuromodulatorSnapshot {
 /// Core message enum for cross-process IPC.
 ///
 /// Messages are separated into:
-/// - Input messages (spikes, embeddings, config)
+/// - Input messages (spikes, embeddings, stimuli, neuromodulators, config)
 /// - Output messages (gradients, traces, training status)
 /// - Control messages (shutdown, ping)
 ///
@@ -87,6 +87,13 @@ pub enum IpcMessage {
     /// Wire envelope for an IPC [`SpikeBatch`] (not a SynapticDistill training batch).
     Spikes(SpikeBatch),
     Embeddings(EmbeddingBatch),
+    /// Typed continuous runtime stimulus ingress (e.g. `thalamic-relay` ->
+    /// `brainstem-daemon`). See [`StimulusBatch`] for channel-width and
+    /// invalid/missing-channel semantics.
+    Stimuli(StimulusBatch),
+    /// Typed neuromodulator ingress, replacing an unstructured float tail.
+    /// See [`NeuromodulatorSnapshot`].
+    Neuromodulators(NeuromodulatorSnapshot),
     Loss(f32),
     ConfigUpdate(ConfigPayload),
 
@@ -99,6 +106,50 @@ pub enum IpcMessage {
     // Control
     Shutdown,
     Ping,
+}
+
+/// Canonical wire batch of continuous, domain-neutral runtime stimulus values.
+///
+/// This is the typed replacement for downstream services' ad-hoc stimulus
+/// payloads — e.g. `thalamic-relay`'s untagged `{"type":"Stimuli","values":[...]}`
+/// UDP JSON, and `brainstem-daemon`'s local `IngressPacket { stimuli, modulators }`
+/// struct. `corpus-ipc` owns this schema; downstream services should decode/encode
+/// through [`IpcMessage::Stimuli`] instead of a private struct or raw
+/// `serde_json::Value` field indexing.
+///
+/// # Channel width
+///
+/// `values.len()` is the channel count. It is **not fixed** by this crate —
+/// do not encode any particular network's input width (e.g. Spikenaut's
+/// current axon count) into this type. Consumers determine width at runtime
+/// from the batch itself.
+///
+/// # Invalid / missing channel semantics
+///
+/// `valid_mask`, when `Some`, must be the same length as `values`.
+/// `valid_mask[i] == false` means channel `i` has no valid reading this tick;
+/// the corresponding `values[i]` is a placeholder (`0.0` by convention) and
+/// must **not** be interpreted as a real zero-valued reading. When
+/// `valid_mask` is `None`, every entry in `values` is valid.
+///
+/// This is a deliberate improvement over ad-hoc formats (e.g. `thalamic-relay`'s
+/// UDP handler) that silently coerce missing or non-numeric channels to `0.0`
+/// with no way to distinguish "sensor read zero" from "no data this tick."
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+pub struct StimulusBatch {
+    /// Optional session ID for concurrent experiment isolation.
+    pub session_id: Option<String>,
+    /// Unique batch identifier for correlation.
+    pub batch_id: u64,
+    /// Timestamp in nanoseconds (UTC or relative).
+    pub timestamp: u64,
+    /// Continuous stimulus values. Length is the channel count; not fixed by this crate.
+    pub values: Vec<f32>,
+    /// Optional per-channel validity mask, same length as `values` when present.
+    /// `false` marks a channel as invalid/missing for this tick (see type docs).
+    pub valid_mask: Option<Vec<bool>>,
+    /// Optional batch-level metadata.
+    pub metadata: Option<BatchMetadata>,
 }
 
 /// IPC transport batch of spike events from compute processing.
@@ -303,6 +354,27 @@ mod tests {
         }
     }
 
+    fn sample_stimulus_batch() -> StimulusBatch {
+        StimulusBatch {
+            session_id: Some("sess-1".into()),
+            batch_id: 7,
+            timestamp: 1_700_000_000,
+            values: vec![0.5, 0.0, -0.25],
+            valid_mask: Some(vec![true, false, true]),
+            metadata: None,
+        }
+    }
+
+    fn sample_neuromodulator_snapshot() -> NeuromodulatorSnapshot {
+        NeuromodulatorSnapshot {
+            tick: 42,
+            dopamine: 0.4,
+            cortisol: 0.3,
+            acetylcholine: 0.2,
+            tempo: 0.1,
+        }
+    }
+
     fn sample_trace_batch() -> TraceBatch {
         TraceBatch {
             session_id: "sess-1".into(),
@@ -376,6 +448,76 @@ mod tests {
         assert_eq!(
             decoded_traces,
             IpcMessage::EligibilityTraces(sample_trace_batch())
+        );
+    }
+
+    #[test]
+    fn stimulus_batch_json_keys_stay_stable() {
+        let json = serde_json::to_value(sample_stimulus_batch()).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "session_id": "sess-1",
+                "batch_id": 7,
+                "timestamp": 1_700_000_000,
+                "values": [0.5, 0.0, -0.25],
+                "valid_mask": [true, false, true],
+                "metadata": null
+            })
+        );
+    }
+
+    #[test]
+    fn stimulus_batch_round_trips() {
+        let batch = sample_stimulus_batch();
+        let json = serde_json::to_value(&batch).unwrap();
+        let decoded: StimulusBatch = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, batch);
+    }
+
+    #[test]
+    fn stimulus_batch_default_has_no_mask_and_all_channels_valid() {
+        let batch = StimulusBatch::default();
+        assert!(batch.values.is_empty());
+        assert!(batch.valid_mask.is_none());
+    }
+
+    #[test]
+    fn stimulus_batch_invalid_channel_is_distinct_from_a_real_zero() {
+        // Channel 1 is a genuine zero reading; channel 2 is missing/invalid and
+        // its 0.0 placeholder must not be mistaken for a real reading.
+        let batch = StimulusBatch {
+            session_id: None,
+            batch_id: 1,
+            timestamp: 0,
+            values: vec![1.0, 0.0, 0.0],
+            valid_mask: Some(vec![true, true, false]),
+            metadata: None,
+        };
+        let json = serde_json::to_value(&batch).unwrap();
+        let decoded: StimulusBatch = serde_json::from_value(json).unwrap();
+        let mask = decoded.valid_mask.expect("mask must survive round-trip");
+        assert!(mask[1], "channel 1 is a valid, genuine zero reading");
+        assert!(!mask[2], "channel 2 is invalid/missing, not a real zero");
+    }
+
+    #[test]
+    fn ipc_message_stimuli_and_neuromodulators_keep_variant_names() {
+        let stimuli = serde_json::to_value(IpcMessage::Stimuli(sample_stimulus_batch())).unwrap();
+        let neuromods =
+            serde_json::to_value(IpcMessage::Neuromodulators(sample_neuromodulator_snapshot()))
+                .unwrap();
+        assert!(stimuli.get("Stimuli").is_some());
+        assert!(neuromods.get("Neuromodulators").is_some());
+        let decoded_stimuli: IpcMessage = serde_json::from_value(stimuli).unwrap();
+        let decoded_neuromods: IpcMessage = serde_json::from_value(neuromods).unwrap();
+        assert_eq!(
+            decoded_stimuli,
+            IpcMessage::Stimuli(sample_stimulus_batch())
+        );
+        assert_eq!(
+            decoded_neuromods,
+            IpcMessage::Neuromodulators(sample_neuromodulator_snapshot())
         );
     }
 }
