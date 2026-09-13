@@ -92,14 +92,23 @@ impl TryFrom<NeuromodulatorSnapshotWire> for NeuromodulatorSnapshot {
 
 impl NeuromodulatorSnapshot {
     /// Parse from the 4 generic score floats in bytes `[72..88]` of a generic packet.
-    pub fn from_scores(tick: i64, scores: &[f32; 4]) -> Self {
-        Self {
+    ///
+    /// Calls [`Self::validate`] internally and returns `Err` if the decoded
+    /// bytes are out of the documented ranges or non-finite. This keeps
+    /// byte-packet ingress consistent with JSON ingress (`IpcMessage::Neuromodulators`
+    /// deserialization also validates) — otherwise a bad packet would only
+    /// surface as a confusing "failed to deserialize" error at the receiver,
+    /// pointing away from where the bad bytes actually came from.
+    pub fn from_scores(tick: i64, scores: &[f32; 4]) -> Result<Self, String> {
+        let snapshot = Self {
             tick,
             dopamine: scores[0],
             cortisol: scores[1],
             acetylcholine: scores[2],
             tempo: scores[3],
-        }
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
     }
 
     /// Check the documented ranges for each field.
@@ -502,6 +511,22 @@ mod tests {
     #[test]
     fn neuromodulator_snapshot_validate_accepts_in_range_values() {
         assert!(sample_neuromodulator_snapshot().validate().is_ok());
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_from_scores_accepts_in_range_values() {
+        let snap = NeuromodulatorSnapshot::from_scores(1, &[0.4, 0.3, 0.2, 1.0])
+            .expect("in-range scores must construct");
+        assert_eq!(snap.tick, 1);
+        assert!((snap.dopamine - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_from_scores_rejects_out_of_range_value() {
+        // tempo (scores[3]) outside documented [0.5, 2.0]
+        let err = NeuromodulatorSnapshot::from_scores(1, &[0.4, 0.3, 0.2, 3.0])
+            .expect_err("out-of-range tempo byte must fail construction, not just deserialization");
+        assert!(err.contains("tempo"), "error should name the field: {err}");
     }
 
     #[test]
