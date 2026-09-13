@@ -135,6 +135,11 @@ pub enum IpcMessage {
 /// This is a deliberate improvement over ad-hoc formats (e.g. `thalamic-relay`'s
 /// UDP handler) that silently coerce missing or non-numeric channels to `0.0`
 /// with no way to distinguish "sensor read zero" from "no data this tick."
+///
+/// Fields are public (matching this crate's other wire batches, e.g.
+/// [`SpikeBatch`]), so the `valid_mask`-length invariant above is not
+/// enforced by construction. Call [`StimulusBatch::validate`] after building
+/// or deserializing one to check it explicitly.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct StimulusBatch {
     /// Optional session ID for concurrent experiment isolation.
@@ -150,6 +155,26 @@ pub struct StimulusBatch {
     pub valid_mask: Option<Vec<bool>>,
     /// Optional batch-level metadata.
     pub metadata: Option<BatchMetadata>,
+}
+
+impl StimulusBatch {
+    /// Check the `valid_mask`-length invariant documented on this type.
+    ///
+    /// Returns `Err` describing the mismatch when `valid_mask` is `Some` and
+    /// its length differs from `values.len()`. Returns `Ok(())` when
+    /// `valid_mask` is `None` or already matches.
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(mask) = &self.valid_mask
+            && mask.len() != self.values.len()
+        {
+            return Err(format!(
+                "StimulusBatch: valid_mask length ({}) must match values length ({})",
+                mask.len(),
+                self.values.len()
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// IPC transport batch of spike events from compute processing.
@@ -480,6 +505,29 @@ mod tests {
         let batch = StimulusBatch::default();
         assert!(batch.values.is_empty());
         assert!(batch.valid_mask.is_none());
+    }
+
+    #[test]
+    fn stimulus_batch_validate_accepts_matching_or_absent_mask() {
+        assert!(StimulusBatch::default().validate().is_ok());
+        assert!(sample_stimulus_batch().validate().is_ok());
+    }
+
+    #[test]
+    fn stimulus_batch_validate_rejects_mismatched_mask_length() {
+        let batch = StimulusBatch {
+            values: vec![0.0, 0.0, 0.0],
+            valid_mask: Some(vec![true, false]),
+            ..Default::default()
+        };
+        let err = batch
+            .validate()
+            .expect_err("mismatched mask must fail validation");
+        assert!(
+            err.contains('3'),
+            "error should mention values length: {err}"
+        );
+        assert!(err.contains('2'), "error should mention mask length: {err}");
     }
 
     #[test]
