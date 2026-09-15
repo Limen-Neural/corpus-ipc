@@ -152,6 +152,15 @@ impl NeuromodulatorSnapshot {
 /// Variant names (`Spikes`, `EligibilityTraces`, …) are serde identifiers and
 /// must stay stable. The payloads they wrap are IPC transport types, not
 /// SynapticDistill training structs (see the module docs).
+///
+/// Versioned ingress should go through
+/// [`crate::decode_ipc_message_json`]: that entry point classifies
+/// [`crate::WireCompatibility`] before the payload is used. Direct
+/// `Deserialize` on this enum is the unversioned (legacy) encoding.
+///
+/// Unknown object fields on payloads are ignored (forward compatible).
+/// Unknown variant names fail to deserialize; this enum has no `Default`
+/// and no serde `other` catch-all, so they never become a valid message.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum IpcMessage {
     // Input messages

@@ -22,6 +22,7 @@ Inter-Process Communication (IPC) library for bridging Rust to external compute 
   - `ConfigPayload`, `ConfigValue`, `BatchMetadata`
 - `HybridFlowBackend` trait for message-oriented hybrid transports
 - `NeuromodulatorSnapshot` for typed neuromodulator ingress/readout payloads
+- `WireCompatibility` envelope (`decode_ipc_message_json`) for fail-closed schema versions
 
 ## Feature flags
 
@@ -37,9 +38,9 @@ link those stacks.
 
 `tower` is not a direct crate dependency. Axum 0.7 depends on it unconditionally,
 so it appears only when the optional `server` feature enables Axum. `serde_json`
-is a **dev-dependency** for serialization-contract tests in `models.rs`; the
-server binary uses Axum's `Json` extractor (the `json` feature), which depends
-on `serde_json` internally.
+is a library dependency so the compatibility envelope can inspect `wire_version`
+before deserializing a payload. The server binary uses Axum's `Json` extractor
+(the `json` feature), which also depends on `serde_json`.
 
 ## Installation
 
@@ -123,6 +124,34 @@ axon/channel count here), and an optional `valid_mask` lets a channel be
 marked invalid/missing for a tick instead of silently reading as `0.0`. See
 the `StimulusBatch` doc comments for the exact semantics.
 
+### Wire compatibility envelope
+
+Crate semver does not define on-wire acceptance. `WireCompatibility` is the
+source of truth for the current and minimum supported **wire** versions
+(currently both `1`). Decode hybrid-flow JSON through
+`decode_ipc_message_json` so too-old and too-new envelopes return typed
+errors before the payload is used. Unversioned tagged `IpcMessage` JSON
+(the encoding shipped in 0.1.0) is still accepted as legacy wire version 1.
+
+Current encoding rules:
+
+- **Unknown fields** on structs and on the envelope object are ignored, so
+  additive optional fields can be skipped by older readers.
+- **Unknown `IpcMessage` variants** fail to deserialize. They never become a
+  valid default (`IpcMessage` has no `Default` and no serde `other` catch-all).
+
+Bump `WireCompatibility::CURRENT` when the on-wire schema changes in a way
+existing decoders cannot ignore. See `CHANGELOG.md` for the full bump rules.
+
+```rust
+use corpus_ipc::{decode_ipc_message_json, encode_ipc_message_json, IpcMessage};
+
+let bytes = encode_ipc_message_json(&IpcMessage::Ping)?;
+let message = decode_ipc_message_json(&bytes)?;
+assert!(matches!(message, IpcMessage::Ping));
+# Ok::<(), corpus_ipc::EnvelopeError>(())
+```
+
 ## Crate Exports
 
 - Backends and traits:
@@ -135,6 +164,10 @@ the `StimulusBatch` doc comments for the exact semantics.
   - `IpcMessage` and all batch/config/trace/gradient payload structs
   - `IpcSpikeBatch` / `IpcTraceBatch` aliases for the IPC wire batches
   - `StimulusBatch`, `NeuromodulatorSnapshot`
+- Wire compatibility:
+  - `WireCompatibility`, `classify_wire_version`, `accept_wire_version`
+  - `WireEnvelope`, `decode_ipc_message_json`, `encode_ipc_message_json`
+  - `Compatibility`, `CompatibilityError`, `EnvelopeError`
 
 ## License
 

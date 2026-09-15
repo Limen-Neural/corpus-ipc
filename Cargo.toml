@@ -26,21 +26,23 @@ exclude = [
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
+# JSON is the current IpcMessage encoding. The compatibility envelope inspects
+# `wire_version` on a `serde_json::Value` *before* deserializing the payload,
+# so this is a library dependency (not test-only).
+serde_json = "1.0"
 # zmq 0.10 has no `vendored` feature (only `default` / `zmq_has`). zmq-sys
 # 0.12 always compiles libzmq from `zeromq-src`; a system libzmq is not required.
 zmq = { version = "0.10", optional = true }
 axum = { version = "0.7", optional = true, default-features = false, features = ["http1", "json", "tokio"] }
 tokio = { version = "1", optional = true, default-features = false, features = ["macros", "net", "rt-multi-thread"] }
 
-[dev-dependencies]
-serde_json = "1.0"
-
 [features]
 default = []
 zmq = ["dep:zmq"]
 # HTTP service stack for `corpus_ipc_server` only. `tower` is a mandatory
-# dependency of optional `axum`, not a direct crate dep. `serde_json` is a
-# test-only (dev) dependency; Axum's `json` feature also pulls it for the binary.
+# dependency of optional `axum`, not a direct crate dep. Axum's `json` feature
+# also pulls `serde_json` for the binary; the library already depends on it for
+# the compatibility envelope decoder.
 server = ["dep:axum", "dep:tokio"]
 
 [[bin]]
