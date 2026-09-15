@@ -37,7 +37,7 @@ CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server --bin corpu
 CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server,zmq --bin corpus_ipc_server
 ```
 
-Backend selection and endpoints are via env vars: `CORPUS_IPC_BACKEND_TYPE` (`zmq` or default `Rust`), `CORPUS_IPC_BIND` (listen address, default `127.0.0.1:8080`), `CORPUS_IPC_ZMQ_READOUT_IPC` (ZeroMQ SUB endpoint, default `ipc:///tmp/corpus_ipc_readout.ipc`). Exercise the service with `POST /initialize`, `POST /process {"inputs":[...]}`, `POST /save_state {"model_path":"..."}`, `POST /reset`.
+Backend selection and endpoints are via env vars: `CORPUS_IPC_BACKEND_TYPE` (`zmq` or default `Rust`), `CORPUS_IPC_BIND` (listen address, default `127.0.0.1:8080`), `CORPUS_IPC_ZMQ_READOUT_IPC` (ZeroMQ subscribe (SUB) endpoint, default `ipc:///tmp/corpus_ipc_readout.ipc`). Exercise the service with `POST /initialize`, `POST /process {"inputs":[...]}`, `POST /save_state {"model_path":"..."}`, `POST /reset`.
 
 ## Architecture
 
