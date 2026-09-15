@@ -40,12 +40,12 @@ fn compatibility_legacy_unversioned_unit_variant_fixture_decodes() {
 }
 
 #[test]
-fn compatibility_min_and_current_envelope_fixture_decodes() {
-    const {
-        assert!(WireCompatibility::MIN_SUPPORTED == WireCompatibility::CURRENT);
-    }
+fn compatibility_supported_envelope_fixture_decodes() {
+    // Committed fixture is wire version 1. It must keep decoding for as long
+    // as 1 stays inside [MIN_SUPPORTED, CURRENT]; widening CURRENT must not
+    // require this test to change.
     let bytes = include_bytes!("fixtures/compatibility/v1_envelope_spikes.json");
-    let decoded = decode_ipc_message_json(bytes).expect("current envelope must decode");
+    let decoded = decode_ipc_message_json(bytes).expect("v1 envelope fixture must decode");
     assert_eq!(decoded, sample_spikes());
 }
 

@@ -29,7 +29,7 @@ thiserror = "1.0"
 # JSON is the current IpcMessage encoding. The compatibility envelope inspects
 # `wire_version` on a `serde_json::Value` *before* deserializing the payload,
 # so this is a library dependency (not test-only).
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["raw_value"] }
 # zmq 0.10 has no `vendored` feature (only `default` / `zmq_has`). zmq-sys
 # 0.12 always compiles libzmq from `zeromq-src`; a system libzmq is not required.
 zmq = { version = "0.10", optional = true }

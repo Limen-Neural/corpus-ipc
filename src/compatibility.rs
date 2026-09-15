@@ -42,6 +42,7 @@
 use serde::de::{DeserializeOwned, Error as DeError};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use serde_json::value::RawValue;
 
 use crate::IpcMessage;
 
@@ -95,6 +96,15 @@ impl WireCompatibility {
         }
     }
 }
+
+const _: () = {
+    assert!(WireCompatibility::MIN_SUPPORTED > 0);
+    assert!(WireCompatibility::CURRENT >= WireCompatibility::MIN_SUPPORTED);
+    assert!(
+        WireCompatibility::LEGACY_UNVERSIONED >= WireCompatibility::MIN_SUPPORTED
+            && WireCompatibility::LEGACY_UNVERSIONED <= WireCompatibility::CURRENT
+    );
+};
 
 /// Result of comparing an incoming version to the supported window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,12 +232,19 @@ impl<T> WireEnvelope<T> {
 
 impl<T: DeserializeOwned> WireEnvelope<T> {
     /// Decode JSON bytes, checking `wire_version` before converting `payload`.
+    ///
+    /// The payload is kept as raw JSON until the version is accepted, so a
+    /// too-new/too-old envelope is rejected without building `T`.
     pub fn decode_json(bytes: &[u8]) -> Result<Self, EnvelopeError> {
-        let value = serde_json::from_slice(bytes).map_err(EnvelopeError::Json)?;
-        Self::from_json_value(value)
+        let raw: RawEnvelope = serde_json::from_slice(bytes).map_err(EnvelopeError::Json)?;
+        envelope_from_raw_parts(raw)
     }
 
     /// Decode an already-parsed JSON value, checking version before `T`.
+    ///
+    /// Prefer [`Self::decode_json`] for byte input so the payload is not first
+    /// materialized as a [`Value`] tree. This entry point exists for callers
+    /// that already hold a `Value`.
     pub fn from_json_value(value: Value) -> Result<Self, EnvelopeError> {
         let Value::Object(mut obj) = value else {
             return Err(EnvelopeError::NotAnObject);
@@ -289,8 +306,20 @@ pub fn encode_ipc_message_json(message: &IpcMessage) -> Result<Vec<u8>, Envelope
 /// assert!(matches!(message, IpcMessage::Ping));
 /// ```
 pub fn decode_ipc_message_json(bytes: &[u8]) -> Result<IpcMessage, EnvelopeError> {
-    let value = serde_json::from_slice(bytes).map_err(EnvelopeError::Json)?;
-    decode_ipc_message_value(value)
+    match serde_json::from_slice::<RawEnvelope>(bytes) {
+        Ok(raw) if raw.wire_version.is_some() => {
+            Ok(envelope_from_raw_parts::<IpcMessage>(raw)?.into_payload())
+        }
+        Ok(_) => {
+            WireCompatibility::accept(WireCompatibility::LEGACY_UNVERSIONED)?;
+            serde_json::from_slice(bytes).map_err(EnvelopeError::Payload)
+        }
+        Err(_) => {
+            // Unit-variant strings (`"Ping"`) and non-objects are not envelopes.
+            let value = serde_json::from_slice(bytes).map_err(EnvelopeError::Json)?;
+            decode_ipc_message_value(value)
+        }
+    }
 }
 
 /// [`decode_ipc_message_json`] for an already-parsed [`serde_json::Value`].
@@ -311,6 +340,29 @@ pub fn decode_ipc_message_value(value: Value) -> Result<IpcMessage, EnvelopeErro
         }
         _ => Err(EnvelopeError::NotAnObject),
     }
+}
+
+/// Envelope JSON with the payload left unparsed until the version is accepted.
+#[derive(Deserialize)]
+struct RawEnvelope {
+    #[serde(default)]
+    wire_version: Option<Value>,
+    #[serde(default)]
+    payload: Option<Box<RawValue>>,
+}
+
+fn envelope_from_raw_parts<T: DeserializeOwned>(
+    raw: RawEnvelope,
+) -> Result<WireEnvelope<T>, EnvelopeError> {
+    let version_val = raw.wire_version.ok_or(EnvelopeError::MissingVersion)?;
+    let version = parse_wire_version(&version_val)?;
+    WireCompatibility::accept(version)?;
+    let payload_raw = raw.payload.ok_or(EnvelopeError::MissingPayload)?;
+    let payload = serde_json::from_str(payload_raw.get()).map_err(EnvelopeError::Payload)?;
+    Ok(WireEnvelope {
+        wire_version: version,
+        payload,
+    })
 }
 
 fn parse_wire_version(value: &Value) -> Result<u32, EnvelopeError> {
