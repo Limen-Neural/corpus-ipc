@@ -46,11 +46,13 @@ on `serde_json` internally.
 `ZmqIpcBackend` is `Send` + `Sync` because `IpcBackend` requires both. libzmq
 sockets are **not** safe to share (`zmq(7)` *Thread safety*; `zmq` 0.10's
 `Socket` is `Send` + `!Sync`). This crate does not `unsafe impl Sync` on the
-socket. The SUB socket is stored in a `Mutex` and every recv/connect/close
-takes that lock. Moving the backend to another thread is supported. `initialize`,
-`process_batch`, and `reset` still take `&mut self`; concurrent process calls
-need an outer lock, which is how `corpus_ipc_server` uses
-`Arc<Mutex<Box<dyn IpcBackend>>>`.
+socket. The SUB socket is created, subscribed, and connected on the
+initializing thread (`initialize` takes `&mut self`) before it is stored in a
+`Mutex`. Non-blocking receive and `reset`'s close path take that lock; dropping
+the backend closes the socket through exclusive ownership of the struct.
+Moving the backend to another thread is supported. `process_batch` still takes
+`&mut self`; concurrent process calls need an outer lock, which is how
+`corpus_ipc_server` uses `Arc<Mutex<Box<dyn IpcBackend>>>`.
 
 ## Installation
 

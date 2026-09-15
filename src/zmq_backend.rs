@@ -15,23 +15,24 @@
 //!   another thread. libzmq allows that migration across a memory barrier;
 //!   transferring ownership of this struct provides one.
 //! - **Share (`Sync`)**: the public type is `Sync` only because the socket is
-//!   stored in a [`Mutex`]. All socket I/O takes that lock. `zmq::Socket`
-//!   methods are `&self`, which is interior mutability at the C layer — they
-//!   must not run concurrently. The mutex is the synchronization the type
-//!   actually enforces.
+//!   stored in a [`Mutex`]. `zmq::Socket` methods are `&self`, which is
+//!   interior mutability at the C layer — they must not run concurrently.
+//!   Recv and `reset`'s close path take the mutex. Create/connect run on the
+//!   initializing thread before the socket is stored. Drop of the backend
+//!   closes via exclusive ownership of the struct.
 //! - **`&mut self` cache boundary**: `initialize`, `process_batch`, and `reset`
 //!   still take `&mut self` for the readout cache and initialized flag.
 //!   Shared `&ZmqIpcBackend` may call [`IpcBackend::save_state`] and
 //!   [`IpcBackend::get_spike_states`] concurrently with each other, but not
 //!   with a `&mut self` call (ordinary Rust aliasing). The REST server wraps
 //!   a backend in `Arc<Mutex<Box<dyn IpcBackend>>>`.
-//! - **Initialize**: creates the SUB socket on the calling thread and stores
-//!   it under the mutex. Idempotent after success.
+//! - **Initialize**: creates, subscribes, and connects the SUB socket on the
+//!   calling thread, then stores it under the mutex. Idempotent after success.
 //! - **Process**: non-blocking `recv` (`zmq::DONTWAIT`) under the mutex;
 //!   `EAGAIN` returns the cached readout.
-//! - **Drop / reset**: dropping the `Option` (via `reset` or `Drop`) closes
-//!   the socket on whichever thread owns the backend; `zmq::Socket`'s `Drop`
-//!   calls `zmq_close`.
+//! - **Drop / reset**: `reset` drops the socket under the mutex. `Drop` of
+//!   the backend closes it through exclusive ownership (`zmq::Socket`'s
+//!   `Drop` calls `zmq_close`).
 
 use std::sync::{Mutex, MutexGuard};
 
@@ -75,11 +76,12 @@ pub type ZmqRuntimeBackend = ZmqIpcBackend;
 /// | Operation | Thread contract |
 /// | --- | --- |
 /// | Move to another thread | Supported. libzmq permits socket migration across a memory barrier; `Send` of this owned value is that barrier. |
-/// | Share `&ZmqIpcBackend` | Allowed (`Sync`). Socket I/O is serialized by an internal `Mutex`. Raw `zmq::Socket` is **not** `Sync` and is never shared. |
-/// | `initialize` | `&mut self`. Creates the SUB socket on the calling thread, then stores it under the mutex. Idempotent after success. |
+/// | Share `&ZmqIpcBackend` | Allowed (`Sync`). Recv and `reset` close are serialized by an internal `Mutex`. Raw `zmq::Socket` is **not** `Sync` and is never shared. |
+/// | `initialize` | `&mut self`. Creates, subscribes, and connects the SUB socket on the calling thread, then stores it under the mutex. Idempotent after success. |
 /// | `process_batch` | `&mut self`. Non-blocking recv under the mutex; `EAGAIN` returns the cached readout. |
 /// | `save_state` / `get_spike_states` | `&self`. Do not touch the socket. |
-/// | `reset` / `Drop` | Drops the SUB socket (close) under the mutex, on the owning thread. |
+/// | `reset` | `&mut self`. Drops the SUB socket under the mutex. |
+/// | `Drop` | Closes the socket through exclusive ownership of the backend (`zmq_close`). |
 ///
 /// Concurrent `process_batch` still requires an outer lock (as
 /// `corpus_ipc_server` does) because the trait method takes `&mut self`.
@@ -131,6 +133,42 @@ impl ZmqIpcBackend {
         self.sub_socket
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Create, subscribe, connect, then store the SUB socket under the mutex.
+    ///
+    /// Socket construction and `connect` run on the calling thread *before*
+    /// the value is stored. Only the store takes the lock.
+    fn connect_sub(&mut self, endpoint: &str) -> Result<(), BackendError> {
+        let socket = self
+            .context
+            .socket(zmq::SUB)
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ SUB socket: {e}")))?;
+        socket
+            .set_subscribe(b"")
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ subscribe: {e}")))?;
+        socket
+            .set_rcvhwm(16)
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ rcvhwm: {e}")))?;
+        socket.connect(endpoint).map_err(|e| {
+            BackendError::InitializationError(format!(
+                "ZMQ connect to {endpoint}: {e} (is the IPC producer running?)"
+            ))
+        })?;
+        *self.lock_sub_socket() = Some(ExclusiveSocket { socket });
+        Ok(())
+    }
+
+    /// Test helper: initialize against a caller-chosen endpoint so live tests
+    /// do not share `CORPUS_IPC_ZMQ_READOUT_IPC` / the default production path.
+    #[cfg(test)]
+    fn initialize_at(&mut self, endpoint: &str) -> Result<(), BackendError> {
+        if self.initialized {
+            return Ok(());
+        }
+        self.connect_sub(endpoint)?;
+        self.initialized = true;
+        Ok(())
     }
 
     fn receive_readout(&mut self) -> Result<Vec<f32>, BackendError> {
@@ -207,26 +245,9 @@ impl IpcBackend for ZmqIpcBackend {
         if self.initialized {
             return Ok(());
         }
-        let socket = self
-            .context
-            .socket(zmq::SUB)
-            .map_err(|e| BackendError::InitializationError(format!("ZMQ SUB socket: {e}")))?;
-        socket
-            .set_subscribe(b"")
-            .map_err(|e| BackendError::InitializationError(format!("ZMQ subscribe: {e}")))?;
-        socket
-            .set_rcvhwm(16)
-            .map_err(|e| BackendError::InitializationError(format!("ZMQ rcvhwm: {e}")))?;
         let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC")
             .unwrap_or_else(|_| DEFAULT_READOUT_IPC.to_string());
-        socket.connect(&endpoint).map_err(|e| {
-            BackendError::InitializationError(format!(
-                "ZMQ connect to {}: {} (is the IPC producer running?)",
-                endpoint, e
-            ))
-        })?;
-
-        *self.lock_sub_socket() = Some(ExclusiveSocket { socket });
+        self.connect_sub(&endpoint)?;
         self.initialized = true;
         println!("[zmq-ipc] Connected to IPC producer at {}", endpoint);
         Ok(())
@@ -307,7 +328,19 @@ mod _assert_not_sync {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
     use super::*;
+
+    fn unique_test_endpoint() -> String {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        format!(
+            "ipc:///tmp/corpus_ipc_zmq_test_{}_{}.ipc",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        )
+    }
 
     fn make_packet(tick: i64, readout: &[f32]) -> Vec<u8> {
         let mut buf = Vec::with_capacity(8 + readout.len() * 4);
@@ -380,7 +413,7 @@ mod tests {
     fn initialize_nonblocking_recv_and_drop() {
         let mut backend = ZmqIpcBackend::new();
         backend
-            .initialize(None)
+            .initialize_at(&unique_test_endpoint())
             .expect("ZMQ connect is asynchronous; a publisher need not be bound");
         // DONTWAIT with no publisher returns EAGAIN and the empty cache.
         let out = backend.process_batch(&[1.0]).unwrap();
@@ -392,7 +425,7 @@ mod tests {
     #[test]
     fn connected_backend_can_move_to_owner_thread() {
         let mut backend = ZmqIpcBackend::new();
-        backend.initialize(None).unwrap();
+        backend.initialize_at(&unique_test_endpoint()).unwrap();
         let readout = std::thread::spawn(move || {
             let out = backend.process_batch(&[]).unwrap();
             drop(backend);
@@ -406,9 +439,10 @@ mod tests {
     #[test]
     fn uninitialized_backend_can_move_then_initialize() {
         let backend = ZmqIpcBackend::new();
+        let endpoint = unique_test_endpoint();
         std::thread::spawn(move || {
             let mut backend = backend;
-            backend.initialize(None).unwrap();
+            backend.initialize_at(&endpoint).unwrap();
             let out = backend.process_batch(&[]).unwrap();
             assert!(out.is_empty());
         })
@@ -420,7 +454,7 @@ mod tests {
     fn repeated_construct_initialize_process_drop() {
         for _ in 0..8 {
             let mut backend = ZmqIpcBackend::new();
-            backend.initialize(None).unwrap();
+            backend.initialize_at(&unique_test_endpoint()).unwrap();
             let out = backend.process_batch(&[]).unwrap();
             assert!(out.is_empty());
             backend.reset().unwrap();
@@ -430,12 +464,10 @@ mod tests {
 
     #[test]
     fn backend_is_usable_behind_arc_mutex() {
-        use std::sync::Arc;
-
         let backend = Arc::new(Mutex::new(ZmqIpcBackend::new()));
         {
             let mut guard = backend.lock().unwrap();
-            guard.initialize(None).unwrap();
+            guard.initialize_at(&unique_test_endpoint()).unwrap();
             assert!(guard.process_batch(&[]).unwrap().is_empty());
         }
         let moved = Arc::clone(&backend);
