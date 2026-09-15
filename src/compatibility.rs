@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Fail-closed wire-schema compatibility for [`IpcMessage`](crate::IpcMessage).
+//! Fail-closed wire-schema compatibility for [`IpcMessage`].
 //!
 //! Crate semver (`CARGO_PKG_VERSION`) answers whether a consumer may depend on
 //! this library. It does **not** answer whether an on-wire payload may be used.
@@ -24,7 +24,8 @@
 //! # Current encoding rules
 //!
 //! The current encoding is serde JSON with externally tagged [`IpcMessage`]
-//! variants (`{"Spikes":{...}}`, `{"Ping":null}`, …).
+//! variants (`{"Spikes":{...}}`, `"Ping"`, …). Unit variants encode as JSON
+//! strings; struct variants encode as single-key objects.
 //!
 //! - **Unknown fields** are ignored on structs and on the envelope object.
 //!   Older readers can therefore skip additive optional fields without a
@@ -277,7 +278,7 @@ pub fn encode_ipc_message_json(message: &IpcMessage) -> Result<Vec<u8>, Envelope
 /// Envelope path: `{"wire_version":N,"payload":{...}}` — `N` is classified
 /// before the payload is deserialized.
 ///
-/// Legacy path: `{"Spikes":{...}}` / `{"Ping":null}` / … — treated as
+/// Legacy path: `{"Spikes":{...}}` or `"Ping"` — treated as
 /// [`WireCompatibility::LEGACY_UNVERSIONED`].
 ///
 /// ```
@@ -294,14 +295,21 @@ pub fn decode_ipc_message_json(bytes: &[u8]) -> Result<IpcMessage, EnvelopeError
 
 /// [`decode_ipc_message_json`] for an already-parsed [`serde_json::Value`].
 pub fn decode_ipc_message_value(value: Value) -> Result<IpcMessage, EnvelopeError> {
-    let Some(obj) = value.as_object() else {
-        return Err(EnvelopeError::NotAnObject);
-    };
-    if obj.contains_key("wire_version") {
-        Ok(WireEnvelope::<IpcMessage>::from_json_value(value)?.into_payload())
-    } else {
-        WireCompatibility::accept(WireCompatibility::LEGACY_UNVERSIONED)?;
-        serde_json::from_value(value).map_err(EnvelopeError::Payload)
+    match &value {
+        // Externally tagged unit variants (`Ping`, `Shutdown`, `TrainingComplete`)
+        // serialize as a JSON string, not an object.
+        Value::String(_) => {
+            WireCompatibility::accept(WireCompatibility::LEGACY_UNVERSIONED)?;
+            serde_json::from_value(value).map_err(EnvelopeError::Payload)
+        }
+        Value::Object(obj) if obj.contains_key("wire_version") => {
+            Ok(WireEnvelope::<IpcMessage>::from_json_value(value)?.into_payload())
+        }
+        Value::Object(_) => {
+            WireCompatibility::accept(WireCompatibility::LEGACY_UNVERSIONED)?;
+            serde_json::from_value(value).map_err(EnvelopeError::Payload)
+        }
+        _ => Err(EnvelopeError::NotAnObject),
     }
 }
 
@@ -359,13 +367,14 @@ mod tests {
 
     #[test]
     fn compatibility_window_is_internally_consistent() {
-        assert!(
-            WireCompatibility::MIN_SUPPORTED > 0,
-            "boundary tests need a representable min-1"
-        );
-        assert!(WireCompatibility::CURRENT >= WireCompatibility::MIN_SUPPORTED);
-        let legacy = WireCompatibility::LEGACY_UNVERSIONED;
-        assert!(legacy >= WireCompatibility::MIN_SUPPORTED && legacy <= WireCompatibility::CURRENT);
+        const {
+            assert!(WireCompatibility::MIN_SUPPORTED > 0);
+            assert!(WireCompatibility::CURRENT >= WireCompatibility::MIN_SUPPORTED);
+            assert!(
+                WireCompatibility::LEGACY_UNVERSIONED >= WireCompatibility::MIN_SUPPORTED
+                    && WireCompatibility::LEGACY_UNVERSIONED <= WireCompatibility::CURRENT
+            );
+        }
     }
 
     #[test]
@@ -436,11 +445,13 @@ mod tests {
     fn compatibility_envelope_json_keys_stay_stable() {
         let env = WireEnvelope::new(IpcMessage::Ping);
         let json = serde_json::to_value(&env).unwrap();
+        // Externally tagged unit variants encode as a JSON string, not
+        // `{"Ping":null}`. Struct variants still wrap in an object.
         assert_eq!(
             json,
             serde_json::json!({
                 "wire_version": 1,
-                "payload": { "Ping": null }
+                "payload": "Ping"
             })
         );
     }
@@ -457,6 +468,14 @@ mod tests {
         let legacy = sample_spikes_payload();
         let decoded = decode_ipc_message_value(legacy).unwrap();
         assert_eq!(decoded, sample_spikes());
+    }
+
+    #[test]
+    fn compatibility_legacy_unit_variant_string_decodes() {
+        let decoded = decode_ipc_message_json(br#""Ping""#).unwrap();
+        assert_eq!(decoded, IpcMessage::Ping);
+        let encoded = encode_ipc_message_json(&IpcMessage::Ping).unwrap();
+        assert_eq!(decode_ipc_message_json(&encoded).unwrap(), IpcMessage::Ping);
     }
 
     #[test]

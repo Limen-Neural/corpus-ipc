@@ -33,12 +33,17 @@ fn compatibility_legacy_unversioned_fixture_decodes() {
 }
 
 #[test]
+fn compatibility_legacy_unversioned_unit_variant_fixture_decodes() {
+    let bytes = include_bytes!("fixtures/compatibility/legacy_unversioned_ping.json");
+    let decoded = decode_ipc_message_json(bytes).expect("legacy unit variant must decode");
+    assert_eq!(decoded, IpcMessage::Ping);
+}
+
+#[test]
 fn compatibility_min_and_current_envelope_fixture_decodes() {
-    assert_eq!(
-        WireCompatibility::MIN_SUPPORTED,
-        WireCompatibility::CURRENT,
-        "v1 fixture covers both min and current while they are equal"
-    );
+    const {
+        assert!(WireCompatibility::MIN_SUPPORTED == WireCompatibility::CURRENT);
+    }
     let bytes = include_bytes!("fixtures/compatibility/v1_envelope_spikes.json");
     let decoded = decode_ipc_message_json(bytes).expect("current envelope must decode");
     assert_eq!(decoded, sample_spikes());
