@@ -604,4 +604,152 @@ fn duplicate_config_keys_and_oversize_config_map() {
         payload.validate().unwrap_err().kind,
         ValidationKind::LimitExceeded
     );
+
+    let mut oversize = serde_json::Map::new();
+    for i in 0..=limits().max_metadata_entries {
+        oversize.insert(format!("k{i}"), serde_json::json!(true));
+    }
+    assert_serde_kind::<ConfigPayload>(
+        serde_json::json!({"session_id": null, "config": oversize}),
+        ValidationKind::LimitExceeded,
+    );
+}
+
+#[test]
+fn remaining_payloads_round_trip_and_dispatch() {
+    let embedding = EmbeddingBatch {
+        session_id: Some("sess".into()),
+        batch_id: 1,
+        embedding: vec![0.1, 0.2],
+        sequence_length: 2,
+    };
+    let json = serde_json::to_value(&embedding).unwrap();
+    let decoded: EmbeddingBatch = serde_json::from_value(json).unwrap();
+    assert_eq!(decoded, embedding);
+    IpcMessage::Embeddings(embedding.clone())
+        .validate()
+        .unwrap();
+    let too_long_seq = EmbeddingBatch {
+        sequence_length: limits().max_aggregate_records + 1,
+        ..embedding.clone()
+    };
+    assert_eq!(
+        too_long_seq.validate().unwrap_err().kind,
+        ValidationKind::LimitExceeded
+    );
+
+    let update = GradientUpdate {
+        layer_id: "l0".into(),
+        gradients: vec![0.25],
+        eligibility_trace: Some(vec![0.1]),
+    };
+    let json = serde_json::to_value(&update).unwrap();
+    let decoded: GradientUpdate = serde_json::from_value(json).unwrap();
+    assert_eq!(decoded.eligibility_trace.as_deref(), Some(&[0.1][..]));
+
+    let batch = GradientBatch {
+        session_id: "s".into(),
+        batch_id: 9,
+        gradients: vec![update.clone()],
+    };
+    let json = serde_json::to_value(&batch).unwrap();
+    let decoded: GradientBatch = serde_json::from_value(json).unwrap();
+    assert_eq!(decoded.gradients.len(), 1);
+    IpcMessage::GradientUpdate(batch.clone())
+        .validate()
+        .unwrap();
+
+    let mut metadata = BatchMetadata {
+        processing_latency_ns: Some(3),
+        source: Some("encoder".into()),
+        custom: std::collections::HashMap::from([("k".into(), "v".into())]),
+    };
+    let json = serde_json::to_value(&metadata).unwrap();
+    let decoded: BatchMetadata = serde_json::from_value(json).unwrap();
+    assert_eq!(decoded.source.as_deref(), Some("encoder"));
+
+    let spikes = SpikeBatch {
+        session_id: Some("sess".into()),
+        batch_id: 1,
+        timestamp: 0,
+        spikes: vec![SpikeEvent {
+            channel: 1,
+            time: 2,
+            strength: 0.3,
+        }],
+        metadata: Some(metadata.clone()),
+    };
+    spikes.validate().unwrap();
+    IpcMessage::Spikes(spikes).validate().unwrap();
+
+    let traces = TraceBatch {
+        session_id: "s".into(),
+        batch_id: 1,
+        traces: vec![TraceData {
+            channel_id: 4,
+            trace_value: 0.2,
+            last_spike_time: 1,
+        }],
+    };
+    let json = serde_json::to_value(&traces).unwrap();
+    let decoded: TraceBatch = serde_json::from_value(json).unwrap();
+    assert_eq!(decoded.traces[0].channel_id, 4);
+    IpcMessage::EligibilityTraces(decoded).validate().unwrap();
+
+    let mut config = std::collections::HashMap::new();
+    config.insert("mode".into(), ConfigValue::String("fast".into()));
+    config.insert("n".into(), ConfigValue::Integer(7));
+    config.insert("on".into(), ConfigValue::Boolean(true));
+    config.insert("arr".into(), ConfigValue::FloatArray(vec![1.0, 2.0]));
+    let payload = ConfigPayload {
+        session_id: None,
+        config,
+    };
+    payload.validate().unwrap();
+    let json = serde_json::to_value(&payload).unwrap();
+    let decoded: ConfigPayload = serde_json::from_value(json).unwrap();
+    assert!(matches!(
+        decoded.config.get("on"),
+        Some(ConfigValue::Boolean(true))
+    ));
+    IpcMessage::ConfigUpdate(payload).validate().unwrap();
+    ConfigValue::Integer(3).validate().unwrap();
+    ConfigValue::Boolean(false).validate().unwrap();
+
+    let snapshot = NeuromodulatorSnapshot {
+        tick: 1,
+        dopamine: 0.1,
+        cortisol: 0.2,
+        acetylcholine: 0.3,
+        tempo: 1.0,
+    };
+    IpcMessage::Neuromodulators(snapshot).validate().unwrap();
+
+    let ok_stim = StimulusBatch {
+        values: vec![0.0],
+        metadata: Some(BatchMetadata {
+            processing_latency_ns: None,
+            source: None,
+            custom: std::collections::HashMap::from([("a".into(), "b".into())]),
+        }),
+        ..Default::default()
+    };
+    ok_stim.validate().unwrap();
+    IpcMessage::Stimuli(ok_stim).validate().unwrap();
+
+    metadata.custom.insert(String::new(), "v".into());
+    let parent = StimulusBatch {
+        values: vec![0.0],
+        metadata: Some(metadata),
+        ..Default::default()
+    };
+    assert_eq!(
+        parent.validate().unwrap_err().kind,
+        ValidationKind::NestedMetadata
+    );
+
+    let mut empty = ValidationError::nested_metadata("");
+    empty.path.clear();
+    let prefixed = super::prefix_path(empty, "root");
+    assert_eq!(prefixed.path, "root");
 }

@@ -420,6 +420,92 @@ where
     Ok(())
 }
 
+fn reject_seq_overflow<'de, A>(seq: &mut A, max: usize, path: &'static str) -> Result<(), A::Error>
+where
+    A: SeqAccess<'de>,
+{
+    match seq.next_element::<IgnoredAny>() {
+        Ok(Some(_)) => {
+            let actual = max.saturating_add(1);
+            Err(serde::de::Error::custom(ValidationError::limit_exceeded(
+                path, actual, max,
+            )))
+        }
+        Ok(None) => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+fn reject_map_overflow<'de, A>(
+    access: &mut A,
+    max_entries: usize,
+    path: &'static str,
+) -> Result<(), A::Error>
+where
+    A: MapAccess<'de>,
+{
+    match access.next_entry::<IgnoredAny, IgnoredAny>() {
+        Ok(Some(_)) => {
+            let actual = max_entries.saturating_add(1);
+            Err(serde::de::Error::custom(ValidationError::limit_exceeded(
+                path,
+                actual,
+                max_entries,
+            )))
+        }
+        Ok(None) => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+fn accept_map_key<V, E>(
+    map: &HashMap<String, V>,
+    key: &str,
+    max_key_bytes: usize,
+    path: &'static str,
+) -> Result<(), E>
+where
+    E: serde::de::Error,
+{
+    if key.is_empty() {
+        return Err(E::custom(ValidationError::nested_metadata(format!(
+            "{path}.<empty>"
+        ))));
+    }
+    if key.len() > max_key_bytes {
+        return Err(E::custom(ValidationError::byte_limit(
+            format!("{path}.<key>"),
+            key.len(),
+            max_key_bytes,
+        )));
+    }
+    if map.contains_key(key) {
+        return Err(E::custom(ValidationError::duplicate_identifier(
+            format!("{path}.{key}"),
+            key,
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn check_unique_strings<T>(
+    path: &str,
+    items: &[T],
+    key_of: impl Fn(&T) -> &str,
+) -> Result<(), ValidationError> {
+    let mut seen = HashSet::new();
+    for (index, item) in items.iter().enumerate() {
+        let key = key_of(item);
+        if !seen.insert(key) {
+            return Err(ValidationError::duplicate_identifier(
+                format!("{path}[{index}]"),
+                key,
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Deserialize a sequence, rejecting a length above `max` without trusting `size_hint`.
 pub(crate) fn bounded_vec<'de, T, D>(
     deserializer: D,
@@ -448,16 +534,8 @@ where
             let mut out = Vec::with_capacity(cap);
             loop {
                 if out.len() >= self.max {
-                    match seq.next_element::<IgnoredAny>() {
-                        Ok(Some(_)) => {
-                            let actual = self.max.saturating_add(1);
-                            return Err(serde::de::Error::custom(ValidationError::limit_exceeded(
-                                self.path, actual, self.max,
-                            )));
-                        }
-                        Ok(None) => break,
-                        Err(err) => return Err(err),
-                    }
+                    reject_seq_overflow(&mut seq, self.max, self.path)?;
+                    break;
                 }
                 match seq.next_element()? {
                     Some(item) => out.push(item),
@@ -672,41 +750,12 @@ where
             let mut map = HashMap::with_capacity(cap);
             loop {
                 if map.len() >= self.max_entries {
-                    match access.next_entry::<IgnoredAny, IgnoredAny>() {
-                        Ok(Some(_)) => {
-                            let actual = self.max_entries.saturating_add(1);
-                            return Err(serde::de::Error::custom(ValidationError::limit_exceeded(
-                                self.path,
-                                actual,
-                                self.max_entries,
-                            )));
-                        }
-                        Ok(None) => break,
-                        Err(err) => return Err(err),
-                    }
+                    reject_map_overflow(&mut access, self.max_entries, self.path)?;
+                    break;
                 }
                 match access.next_entry::<String, V>()? {
                     Some((key, value)) => {
-                        if key.is_empty() {
-                            return Err(serde::de::Error::custom(
-                                ValidationError::nested_metadata(format!("{}.<empty>", self.path)),
-                            ));
-                        }
-                        if key.len() > self.max_key_bytes {
-                            return Err(serde::de::Error::custom(ValidationError::byte_limit(
-                                format!("{}.<key>", self.path),
-                                key.len(),
-                                self.max_key_bytes,
-                            )));
-                        }
-                        if map.contains_key(&key) {
-                            return Err(serde::de::Error::custom(
-                                ValidationError::duplicate_identifier(
-                                    format!("{path}.{key}", path = self.path),
-                                    &key,
-                                ),
-                            ));
-                        }
+                        accept_map_key(&map, &key, self.max_key_bytes, self.path)?;
                         map.insert(key, value);
                     }
                     None => break,
@@ -792,5 +841,97 @@ mod tests {
         let a = ValidationMeasure::Float(f32::NAN);
         let b = ValidationMeasure::Float(f32::from_bits(f32::NAN.to_bits()));
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn measure_display_and_inequality() {
+        assert_ne!(ValidationMeasure::Count(1), ValidationMeasure::Bytes(1));
+        assert_eq!(
+            ValidationMeasure::Range { min: 0.5, max: 2.0 }.to_string(),
+            "[0.5, 2]"
+        );
+        let only_actual = ValidationError::non_finite("x", f32::INFINITY);
+        assert!(only_actual.to_string().contains("actual="));
+        let neither = ValidationError::nested_metadata("custom");
+        assert_eq!(neither.to_string(), "nested_metadata at `custom`");
+        let only_limit = ValidationError {
+            path: "q".into(),
+            kind: ValidationKind::OutOfRange,
+            actual: None,
+            limit: Some(ValidationMeasure::Range { min: 0.0, max: 1.0 }),
+        };
+        assert!(only_limit.to_string().contains("limit="));
+        assert!(!only_limit.to_string().contains("actual="));
+    }
+
+    #[test]
+    fn bounded_vec_and_map_cover_overflow_and_exact_max() {
+        let exact: Vec<u32> = bounded_vec(serde_json::json!([1, 2]), 2, "items").unwrap();
+        assert_eq!(exact, vec![1, 2]);
+        let err = bounded_vec::<u32, _>(serde_json::json!([1, 2, 3]), 2, "items").unwrap_err();
+        assert!(err.to_string().contains("limit_exceeded"));
+        let type_err = bounded_vec::<u32, _>(serde_json::json!("nope"), 2, "items").unwrap_err();
+        assert!(type_err.to_string().contains("at most 2"));
+
+        let null_mask: Option<Vec<bool>> =
+            bounded_opt_vec(serde_json::Value::Null, 4, "valid_mask").unwrap();
+        assert!(null_mask.is_none());
+        let some_mask: Option<Vec<bool>> =
+            bounded_opt_vec(serde_json::json!([true, false]), 4, "valid_mask").unwrap();
+        assert_eq!(some_mask, Some(vec![true, false]));
+
+        let ok = bounded_string(serde_json::Value::String("ab".into()), 2, "s").unwrap();
+        assert_eq!(ok, "ab");
+        let long = bounded_string(serde_json::Value::String("abc".into()), 2, "s").unwrap_err();
+        assert!(long.to_string().contains("limit_exceeded"));
+        let over_str = bounded_string(
+            serde::de::value::BorrowedStrDeserializer::<serde::de::value::Error>::new("abcdef"),
+            2,
+            "s",
+        )
+        .unwrap_err();
+        assert!(over_str.to_string().contains("limit_exceeded"));
+        let bytes = bounded_string(
+            serde::de::value::BorrowedBytesDeserializer::<serde::de::value::Error>::new(b"abc"),
+            2,
+            "s",
+        )
+        .unwrap_err();
+        assert!(bytes.to_string().contains("limit_exceeded"));
+
+        let map: std::collections::HashMap<String, String> =
+            bounded_map(serde_json::json!({"a": "1", "b": "2"}), 2, 8, "custom").unwrap();
+        assert_eq!(map.len(), 2);
+        let overflow = bounded_map::<String, _>(
+            serde_json::json!({"a": "1", "b": "2", "c": "3"}),
+            2,
+            8,
+            "custom",
+        )
+        .unwrap_err();
+        assert!(overflow.to_string().contains("limit_exceeded"));
+        let empty_key =
+            bounded_map::<String, _>(serde_json::json!({"": "v"}), 8, 8, "custom").unwrap_err();
+        assert!(empty_key.to_string().contains("nested_metadata"));
+        let long_key = bounded_map::<String, _>(serde_json::json!({"abcdef": "v"}), 8, 3, "custom")
+            .unwrap_err();
+        assert!(long_key.to_string().contains("limit_exceeded"));
+        let map_ty = bounded_map::<String, _>(serde_json::json!([1]), 8, 8, "custom").unwrap_err();
+        assert!(map_ty.to_string().contains("at most 8"));
+
+        let inf = finite_f32_at(serde_json::json!(1e39), "value").unwrap_err();
+        assert!(inf.to_string().contains("non_finite"));
+        assert!(finite_f32_at(serde_json::json!(1.5), "value").is_ok());
+    }
+
+    #[test]
+    fn duplicate_string_keys_and_unique_helper() {
+        struct Row {
+            id: String,
+        }
+        let items = [Row { id: "a".into() }, Row { id: "a".into() }];
+        let err = check_unique_strings("gradients", &items, |row| row.id.as_str()).unwrap_err();
+        assert_eq!(err.kind, ValidationKind::DuplicateIdentifier);
+        check_unique_strings("gradients", &items[..1], |row| row.id.as_str()).unwrap();
     }
 }

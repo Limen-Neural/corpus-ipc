@@ -28,7 +28,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::validation::{
     ProtocolLimits, Validate, ValidationError, add_to_total, bounded_map, bounded_opt_string,
     bounded_opt_vec, bounded_string, bounded_vec, check_count, check_finite, check_finite_slice,
-    check_opt_string, check_range, check_string, check_unique_by, finite_f32_at,
+    check_opt_string, check_range, check_string, check_unique_by, check_unique_strings,
+    finite_f32_at,
 };
 
 fn de_opt_session_id<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
@@ -332,14 +333,22 @@ impl Validate for StimulusBatch {
                 ));
             }
         }
-        let mut total = 0;
-        add_to_total(&mut total, self.values.len(), limits, "aggregate")?;
-        if let Some(metadata) = &self.metadata {
-            metadata.validate_with(limits)?;
-            add_to_total(&mut total, metadata.custom.len(), limits, "aggregate")?;
-        }
-        Ok(())
+        validate_optional_metadata(&self.metadata, limits, self.values.len())
     }
+}
+
+fn validate_optional_metadata(
+    metadata: &Option<BatchMetadata>,
+    limits: ProtocolLimits,
+    already_counted: usize,
+) -> Result<(), ValidationError> {
+    let mut total = 0;
+    add_to_total(&mut total, already_counted, limits, "aggregate")?;
+    if let Some(metadata) = metadata {
+        metadata.validate_with(limits)?;
+        add_to_total(&mut total, metadata.custom.len(), limits, "aggregate")?;
+    }
+    Ok(())
 }
 
 /// Deserialization-only shadow of [`StimulusBatch`] with the identical wire
@@ -435,18 +444,12 @@ impl Validate for SpikeBatch {
     fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
         check_opt_string("session_id", self.session_id.as_deref(), limits)?;
         check_count("spikes", self.spikes.len(), limits.max_spike_events)?;
-        let mut total = 0;
-        add_to_total(&mut total, self.spikes.len(), limits, "aggregate")?;
         for (index, spike) in self.spikes.iter().enumerate() {
             spike
                 .validate_with(limits)
                 .map_err(|err| prefix_path(err, &format!("spikes[{index}]")))?;
         }
-        if let Some(metadata) = &self.metadata {
-            metadata.validate_with(limits)?;
-            add_to_total(&mut total, metadata.custom.len(), limits, "aggregate")?;
-        }
-        Ok(())
+        validate_optional_metadata(&self.metadata, limits, self.spikes.len())
     }
 }
 
@@ -594,18 +597,27 @@ impl Validate for GradientBatch {
         check_count("gradients", self.gradients.len(), limits.max_gradients)?;
         let mut total = 0;
         add_to_total(&mut total, self.gradients.len(), limits, "aggregate")?;
-        for (index, update) in self.gradients.iter().enumerate() {
-            update
-                .validate_with(limits)
-                .map_err(|err| prefix_path(err, &format!("gradients[{index}]")))?;
-            add_to_total(&mut total, update.gradients.len(), limits, "aggregate")?;
-            if let Some(trace) = &update.eligibility_trace {
-                add_to_total(&mut total, trace.len(), limits, "aggregate")?;
-            }
-        }
-        check_unique_by("gradients", &self.gradients, |row| row.layer_id.clone())?;
+        accumulate_gradient_rows(&self.gradients, limits, &mut total)?;
+        check_unique_strings("gradients", &self.gradients, |row| row.layer_id.as_str())?;
         Ok(())
     }
+}
+
+fn accumulate_gradient_rows(
+    rows: &[GradientUpdate],
+    limits: ProtocolLimits,
+    total: &mut usize,
+) -> Result<(), ValidationError> {
+    for (index, update) in rows.iter().enumerate() {
+        update
+            .validate_with(limits)
+            .map_err(|err| prefix_path(err, &format!("gradients[{index}]")))?;
+        add_to_total(total, update.gradients.len(), limits, "aggregate")?;
+        if let Some(trace) = &update.eligibility_trace {
+            add_to_total(total, trace.len(), limits, "aggregate")?;
+        }
+    }
+    Ok(())
 }
 
 /// Individual gradient update for a specific layer or parameter.
@@ -806,20 +818,28 @@ impl Validate for ConfigPayload {
         check_count("config", self.config.len(), limits.max_metadata_entries)?;
         let mut total = 0;
         add_to_total(&mut total, self.config.len(), limits, "aggregate")?;
-        for (key, value) in &self.config {
-            if key.is_empty() {
-                return Err(ValidationError::nested_metadata("config.<empty>"));
-            }
-            check_string("config.<key>", key, limits)?;
-            value
-                .validate_with(limits)
-                .map_err(|err| prefix_path(err, &format!("config.{key}")))?;
-            if let ConfigValue::FloatArray(values) = value {
-                add_to_total(&mut total, values.len(), limits, "aggregate")?;
-            }
-        }
-        Ok(())
+        validate_config_entries(&self.config, limits, &mut total)
     }
+}
+
+fn validate_config_entries(
+    config: &std::collections::HashMap<String, ConfigValue>,
+    limits: ProtocolLimits,
+    total: &mut usize,
+) -> Result<(), ValidationError> {
+    for (key, value) in config {
+        if key.is_empty() {
+            return Err(ValidationError::nested_metadata("config.<empty>"));
+        }
+        check_string("config.<key>", key, limits)?;
+        value
+            .validate_with(limits)
+            .map_err(|err| prefix_path(err, &format!("config.{key}")))?;
+        if let ConfigValue::FloatArray(values) = value {
+            add_to_total(total, values.len(), limits, "aggregate")?;
+        }
+    }
+    Ok(())
 }
 
 /// Configuration value types.
@@ -934,10 +954,10 @@ impl Validate for IpcMessage {
             Self::Embeddings(batch) => batch.validate_with(limits),
             Self::Stimuli(batch) => batch.validate_with(limits),
             Self::Neuromodulators(snapshot) => snapshot.validate_with(limits),
-            Self::Loss(value) => check_finite("Loss", *value),
             Self::ConfigUpdate(payload) => payload.validate_with(limits),
             Self::GradientUpdate(batch) => batch.validate_with(limits),
             Self::EligibilityTraces(batch) => batch.validate_with(limits),
+            Self::Loss(value) => check_finite("Loss", *value),
             Self::TrainingComplete | Self::Shutdown | Self::Ping => Ok(()),
         }
     }

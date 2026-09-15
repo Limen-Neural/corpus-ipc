@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   batch and message payload; deserialization reuses the same checks and
   rejects oversize collections as early as serde permits.
 
+### Changed
+
+- **Breaking:** `validate()` now returns `Result<(), ValidationError>` instead
+  of `Result<(), String>`. Deserialization of public wire payloads enforces
+  `ProtocolLimits::DEFAULT`, so previously accepted oversize or non-finite
+  payloads are rejected.
+
 - GitHub Actions Codecov workflow (`cargo llvm-cov` LCOV upload with org
   `CODECOV_TOKEN`, slug `Limen-Neural/corpus-ipc`) (#34, RM-1203).
 

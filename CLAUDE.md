@@ -67,7 +67,7 @@ This crate's `SpikeBatch`/`TraceBatch` are **IPC wire payloads** (session/batch 
 
 ### Wire-type invariant pattern: public fields + opt-in `validate()`
 
-Wire structs (`StimulusBatch`, `NeuromodulatorSnapshot`) keep all fields `pub` (matching `SpikeBatch`/`TraceBatch`) rather than hiding them behind a validating constructor, since arbitrary deserialization can always bypass a constructor anyway. Documented invariants (e.g. `StimulusBatch.valid_mask` length must match `values`; `NeuromodulatorSnapshot`'s per-field ranges) are instead checked by a `validate() -> Result<(), ValidationError>` method that callers invoke explicitly after building or deserializing. Follow this pattern for new wire types with invariants rather than inventing a different validation style. `ProtocolLimits` bounds caller-controlled vectors and strings; deserialization uses `ProtocolLimits::DEFAULT`.
+Wire structs (`StimulusBatch`, `NeuromodulatorSnapshot`) keep all fields `pub` (matching `SpikeBatch`/`TraceBatch`) rather than hiding them behind a validating constructor, since arbitrary deserialization can always bypass a constructor anyway. Documented invariants (e.g. `StimulusBatch.valid_mask` length must match `values`; `NeuromodulatorSnapshot`'s per-field ranges) are instead checked by a `validate() -> Result<(), ValidationError>` method. Direct Rust construction still requires an explicit `validate()` call; deserialization of these types runs the same method via `TryFrom`. Follow this pattern for new wire types with invariants rather than inventing a different validation style. `ProtocolLimits` bounds caller-controlled vectors and strings; deserialization uses `ProtocolLimits::DEFAULT`.
 
 ### Serialization compatibility tests are load-bearing
 
