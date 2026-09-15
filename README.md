@@ -37,7 +37,7 @@ link those stacks.
 
 `tower` is not a direct crate dependency. Axum 0.7 depends on it unconditionally,
 so it appears only when the optional `server` feature enables Axum. `serde_json`
-is a **dev-dependency** for serialization-contract tests in `models.rs`; the
+is a **dev-dependency** for serialization-contract tests in `models/`; the
 server binary uses Axum's `Json` extractor (the `json` feature), which depends
 on `serde_json` internally.
 
