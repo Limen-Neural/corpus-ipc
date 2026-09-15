@@ -35,10 +35,11 @@ link those stacks.
 | `zmq` | no | `ZmqIpcBackend` (vendored libzmq via `zmq-sys`; needs a C++ compiler) |
 | `server` | no | `corpus_ipc_server` Axum REST binary (`axum` + minimized `tokio`) |
 
-`tower` is not a direct crate dependency; Axum's `tokio` feature pulls it
-transitively. `serde_json` is a **dev-dependency** for serialization-contract
-tests in `models.rs`, not part of the `server` feature (the binary uses Axum's
-`Json` extractor, which depends on `serde_json` internally).
+`tower` is not a direct crate dependency. Axum 0.7 depends on it unconditionally,
+so it appears only when the optional `server` feature enables Axum. `serde_json`
+is a **dev-dependency** for serialization-contract tests in `models.rs`; the
+server binary uses Axum's `Json` extractor (the `json` feature), which depends
+on `serde_json` internally.
 
 ## Installation
 

@@ -17,7 +17,10 @@ cargo clippy --all-targets -- -D warnings             # CI uses --all-features t
 cargo doc --no-deps
 ```
 
-CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo check` for default / `zmq` / `server`, a `cargo tree --no-default-features` assertion that Axum/Tokio/Tower/ZMQ stay out of the core graph, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo build --all-features`, and `cargo test --all-features` — match that locally before pushing.
+CI (`.github/workflows/ci.yml`) runs `cargo fmt --check` and `cargo check` for
+default, `zmq`, and `server`. It asserts that `cargo tree --no-default-features`
+keeps Axum, Tokio, Tower, and ZeroMQ out of the core graph. It then lints, builds,
+and tests with `--all-features`. Match that locally before pushing.
 
 **The `zmq` feature needs a working C++ compiler** (`zmq-sys` builds vendored ZeroMQ from C++ source, it does not link system libzmq). If `c++`/`cc` aren't available, `--all-features` builds fail with a `cc-rs` error unrelated to this crate's code — this is an environment gap, not a regression. If clang can't find libstdc++ headers, force gcc/g++:
 
@@ -25,7 +28,7 @@ CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo check` for defa
 CC=gcc CXX=g++ cargo build --all-features
 ```
 
-Run the REST service (binary `corpus_ipc_server`, auto-discovered from `src/bin/`):
+Run the REST service (binary `corpus_ipc_server`, requires `--features server`):
 
 ```bash
 CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server --bin corpus_ipc_server
