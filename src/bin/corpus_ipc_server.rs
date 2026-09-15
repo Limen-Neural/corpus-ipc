@@ -49,9 +49,10 @@ async fn main() {
         .route("/reset", post(reset))
         .layer(Extension(backend));
 
-    // Bind address (0.0.0.0:8080 by default).
+    // Loopback by default. Set CORPUS_IPC_BIND for another address; remote
+    // binds need an external access-control boundary (no auth/TLS here).
     let addr: SocketAddr = std::env::var("CORPUS_IPC_BIND")
-        .unwrap_or_else(|_| "0.0.0.0:8080".into())
+        .unwrap_or_else(|_| "127.0.0.1:8080".into())
         .parse()
         .expect("invalid bind address");
 

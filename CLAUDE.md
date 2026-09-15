@@ -17,10 +17,11 @@ cargo clippy --all-targets -- -D warnings             # CI uses --all-features t
 cargo doc --no-deps
 ```
 
-CI (`.github/workflows/ci.yml`) runs `cargo fmt --check` and `cargo check` for
-default, `zmq`, and `server`. It asserts that `cargo tree --no-default-features`
-keeps Axum, Tokio, Tower, and ZeroMQ out of the core graph. It then lints, builds,
-and tests with `--all-features`. Match that locally before pushing.
+CI (`.github/workflows/ci.yml`) matrices Build & Test on Ubuntu, macOS, and
+Windows (`fail-fast: false`). Format, the ZeroMQ feature, and `--all-features`
+stay Linux-only. It also asserts that `cargo tree --no-default-features` keeps
+Axum, Tokio, Tower, and ZeroMQ out of the core graph. Match that locally
+before pushing.
 
 **The `zmq` feature needs a working C++ compiler** (`zmq-sys` builds vendored ZeroMQ from C++ source, it does not link system libzmq). If `c++`/`cc` aren't available, `--all-features` builds fail with a `cc-rs` error unrelated to this crate's code — this is an environment gap, not a regression. If clang can't find libstdc++ headers, force gcc/g++:
 
@@ -36,7 +37,7 @@ CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server --bin corpu
 CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server,zmq --bin corpus_ipc_server
 ```
 
-Backend selection and endpoints are via env vars: `CORPUS_IPC_BACKEND_TYPE` (`zmq` or default `Rust`), `CORPUS_IPC_BIND` (listen address, default `0.0.0.0:8080`), `CORPUS_IPC_ZMQ_READOUT_IPC` (ZMQ SUB endpoint, default `ipc:///tmp/corpus_ipc_readout.ipc`). Exercise the service with `POST /initialize`, `POST /process {"inputs":[...]}`, `POST /save_state {"model_path":"..."}`, `POST /reset`.
+Backend selection and endpoints are via env vars: `CORPUS_IPC_BACKEND_TYPE` (`zmq` or default `Rust`), `CORPUS_IPC_BIND` (listen address, default `127.0.0.1:8080`), `CORPUS_IPC_ZMQ_READOUT_IPC` (ZeroMQ SUB endpoint, default `ipc:///tmp/corpus_ipc_readout.ipc`). Exercise the service with `POST /initialize`, `POST /process {"inputs":[...]}`, `POST /save_state {"model_path":"..."}`, `POST /reset`.
 
 ## Architecture
 
