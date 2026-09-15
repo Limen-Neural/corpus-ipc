@@ -11,6 +11,7 @@ Inter-Process Communication (IPC) library for bridging Rust to external compute 
 - `IpcBackend` trait for backend-agnostic signal processing (deprecated alias: `RuntimeBackend`)
 - `RustBackend` reference backend (always available)
 - `ZmqIpcBackend` backend via ZMQ SUB socket (feature `zmq`; deprecated alias: `ZmqRuntimeBackend`)
+- Optional `corpus_ipc_server` REST binary (feature `server`; not compiled for library consumers)
 - Canonical protocol models:
   - `IpcMessage`
   - `SpikeBatch`, `SpikeEvent` (IPC wire types; alias `IpcSpikeBatch`)
@@ -22,6 +23,24 @@ Inter-Process Communication (IPC) library for bridging Rust to external compute 
 - `HybridFlowBackend` trait for message-oriented hybrid transports
 - `NeuromodulatorSnapshot` for typed neuromodulator ingress/readout payloads
 
+## Feature flags
+
+The default dependency graph is wire models plus `RustBackend`. HTTP and ZeroMQ
+are opt-in so a consumer of `IpcMessage` / `StimulusBatch` does not compile or
+link those stacks.
+
+| Feature | Default | What it enables |
+| --- | --- | --- |
+| *(none)* | yes | Wire models (`IpcMessage`, batches, snapshots) and `RustBackend` |
+| `zmq` | no | `ZmqIpcBackend` (vendored libzmq via `zmq-sys`; needs a C++ compiler) |
+| `server` | no | `corpus_ipc_server` Axum REST binary (`axum` + minimized `tokio`) |
+
+`tower` is not a direct crate dependency. Axum 0.7 depends on it unconditionally,
+so it appears only when the optional `server` feature enables Axum. `serde_json`
+is a **dev-dependency** for serialization-contract tests in `models.rs`; the
+server binary uses Axum's `Json` extractor (the `json` feature), which depends
+on `serde_json` internally.
+
 ## Installation
 
 ```toml
@@ -30,6 +49,16 @@ corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc" }
 
 # Optional ZMQ backend support
 # corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc", features = ["zmq"] }
+```
+
+Run the REST service from this repo (not pulled in by a library dependency):
+
+```bash
+# RustBackend only
+CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server --bin corpus_ipc_server
+
+# With ZMQ backend selectable via CORPUS_IPC_BACKEND_TYPE=zmq
+CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server,zmq --bin corpus_ipc_server
 ```
 
 ## Quick Start
