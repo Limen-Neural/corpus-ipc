@@ -280,17 +280,17 @@ fn _assert_intended_send_sync_surface() {
     assert_sync::<ZmqIpcBackend>();
     assert_ipc_backend::<ZmqIpcBackend>();
 
-    // Negative: the raw socket and its exclusive wrapper must not be Sync.
-    // If either becomes Sync, `<T as IfSyncThenAmbiguous<_>>` is ambiguous
-    // and this crate fails to compile.
-    _assert_not_sync::check::<zmq::Socket>();
-    _assert_not_sync::check::<ExclusiveSocket>();
+    // Negative assertions must name a concrete type. A generic helper like
+    // `fn check<T>()` would infer `_` as `NotSyncToken` from the blanket impl
+    // and never become ambiguous, even for `T: Sync`.
+    let _ = <zmq::Socket as _assert_not_sync::IfSyncThenAmbiguous<_>>::witness;
+    let _ = <ExclusiveSocket as _assert_not_sync::IfSyncThenAmbiguous<_>>::witness;
 }
 
-/// Overlapping-impl witness that `T: Sync` is a compile error.
+/// Overlapping-impl witness that a concrete type is not `Sync`.
 ///
-/// If `T: Sync`, both `IfSyncThenAmbiguous` impls apply and turbofish `_`
-/// cannot be inferred. If `T: !Sync`, only the blanket impl applies.
+/// If the type is `Sync`, both impls apply and turbofish `_` cannot be
+/// inferred. If it is `!Sync`, only the blanket impl applies.
 mod _assert_not_sync {
     pub trait IfSyncThenAmbiguous<Marker> {
         fn witness() {}
@@ -301,10 +301,6 @@ mod _assert_not_sync {
 
     impl<T: ?Sized> IfSyncThenAmbiguous<NotSyncToken> for T {}
     impl<T: ?Sized + Sync> IfSyncThenAmbiguous<SyncToken> for T {}
-
-    pub fn check<T: ?Sized>() {
-        let _ = <T as IfSyncThenAmbiguous<_>>::witness;
-    }
 }
 
 // ── Packet-parsing unit tests (no live ZMQ socket needed) ────────────────
