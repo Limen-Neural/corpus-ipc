@@ -30,6 +30,25 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
+      - name: Check default features
+        run: cargo check --no-default-features
+
+      - name: Check zmq feature
+        run: cargo check --features zmq
+
+      - name: Check server feature
+        run: cargo check --features server
+
+      - name: Assert default tree excludes HTTP and ZMQ stacks
+        run: |
+          set -euo pipefail
+          tree=$(cargo tree --no-default-features --edges normal)
+          echo "$tree"
+          if echo "$tree" | grep -E '(^|[[:space:]])(axum|tokio|tower|zmq) v'; then
+            echo "default feature graph must not include axum, tokio, tower, or zmq"
+            exit 1
+          fi
+
       - name: Clippy (lint)
         run: cargo clippy --all-targets --all-features -- -D warnings
 

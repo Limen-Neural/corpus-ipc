@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Feature-gated the HTTP service stack behind `server` so the default crate no
+  longer depends on Axum/Tokio/Tower. `corpus_ipc_server` now requires
+  `--features server` (`required-features = ["server"]`). Tokio is limited to
+  `macros`, `net`, and `rt-multi-thread`. `serde_json` moved to a
+  dev-dependency for wire-format tests. CI checks default, `zmq`, `server`,
+  and `--all-features` graphs (#29, RM-1142).
 - Documented the rationale for keeping the `SpikeBatch` / `TraceBatch` Rust
   names: serde identifiers and existing imports stay stable. No wire-format
   change (RM-324, #7).

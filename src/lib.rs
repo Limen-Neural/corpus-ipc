@@ -10,6 +10,21 @@
 //! - [`RustBackend`] — pure-Rust native backend (no external deps, always available)
 //! - `ZmqIpcBackend` — IPC backend via ZMQ SUB socket (feature `zmq`;
 //!   deprecated alias: `ZmqRuntimeBackend`)
+//!
+//! ## Feature flags
+//!
+//! The default crate is schema and transport only: wire models, [`IpcBackend`],
+//! and [`RustBackend`]. Optional stacks are opt-in so library consumers do not
+//! compile or link ZeroMQ or the HTTP service:
+//!
+//! | Feature | Enables |
+//! | --- | --- |
+//! | *(none / default)* | Wire models and `RustBackend` |
+//! | `zmq` | `ZmqIpcBackend` (vendored libzmq; needs a C++ compiler) |
+//! | `server` | `corpus_ipc_server` Axum REST binary (`axum` + `tokio`) |
+//!
+//! Combine `server` and `zmq` when the REST service should select the ZMQ
+//! backend via `CORPUS_IPC_BACKEND_TYPE=zmq`.
 
 pub mod error;
 pub mod models;

@@ -15,13 +15,22 @@ exclude = ["docs/"]
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
 zmq = { version = "0.10", optional = true }
-axum = "0.7"
-tokio = { version = "1", features = ["full"] }
-tower = "0.4"
+axum = { version = "0.7", optional = true, default-features = false, features = ["http1", "json", "tokio"] }
+tokio = { version = "1", optional = true, default-features = false, features = ["macros", "net", "rt-multi-thread"] }
+
+[dev-dependencies]
 serde_json = "1.0"
 
 [features]
 default = []
 zmq = ["dep:zmq"]
+# HTTP service stack for `corpus_ipc_server` only. Tower and serde_json are
+# pulled transitively by axum (`tokio` / `json` features); they are not
+# library dependencies. serde_json is a dev-dependency for wire-format tests.
+server = ["dep:axum", "dep:tokio"]
+
+[[bin]]
+name = "corpus_ipc_server"
+required-features = ["server"]
 
 [workspace]

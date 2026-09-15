@@ -5,7 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-cargo build                                          # default features (no zmq)
+cargo build                                          # default features (no zmq, no HTTP server)
+cargo check --no-default-features
+cargo check --features zmq
+cargo check --features server                         # also typechecks corpus_ipc_server
 cargo test                                            # default features
 cargo test <test_name>                                # single test, e.g. `cargo test stimulus_batch_round_trips`
 cargo test --all-features                             # includes zmq backend + its tests
@@ -14,7 +17,7 @@ cargo clippy --all-targets -- -D warnings             # CI uses --all-features t
 cargo doc --no-deps
 ```
 
-CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo build --all-features`, and `cargo test --all-features` — match that locally before pushing.
+CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo check` for default / `zmq` / `server`, a `cargo tree --no-default-features` assertion that Axum/Tokio/Tower/ZMQ stay out of the core graph, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo build --all-features`, and `cargo test --all-features` — match that locally before pushing.
 
 **The `zmq` feature needs a working C++ compiler** (`zmq-sys` builds vendored ZeroMQ from C++ source, it does not link system libzmq). If `c++`/`cc` aren't available, `--all-features` builds fail with a `cc-rs` error unrelated to this crate's code — this is an environment gap, not a regression. If clang can't find libstdc++ headers, force gcc/g++:
 
@@ -25,7 +28,9 @@ CC=gcc CXX=g++ cargo build --all-features
 Run the REST service (binary `corpus_ipc_server`, auto-discovered from `src/bin/`):
 
 ```bash
-CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features zmq --bin corpus_ipc_server
+CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server --bin corpus_ipc_server
+# ZMQ backend selectable via CORPUS_IPC_BACKEND_TYPE=zmq:
+CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server,zmq --bin corpus_ipc_server
 ```
 
 Backend selection and endpoints are via env vars: `CORPUS_IPC_BACKEND_TYPE` (`zmq` or default `Rust`), `CORPUS_IPC_BIND` (listen address, default `0.0.0.0:8080`), `CORPUS_IPC_ZMQ_READOUT_IPC` (ZMQ SUB endpoint, default `ipc:///tmp/corpus_ipc_readout.ipc`). Exercise the service with `POST /initialize`, `POST /process {"inputs":[...]}`, `POST /save_state {"model_path":"..."}`, `POST /reset`.

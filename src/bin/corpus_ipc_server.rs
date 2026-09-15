@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Axum-based microservice exposing the `corpus-ipc` crate as a REST API.
+//!
+//! Built only when the `server` crate feature is enabled
+//! (`required-features = ["server"]`). Add `zmq` as well if the process should
+//! be able to select `CORPUS_IPC_BACKEND_TYPE=zmq`.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
