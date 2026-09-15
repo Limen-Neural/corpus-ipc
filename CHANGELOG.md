@@ -20,8 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   libzmq socket (LIM-1232). `zmq` 0.10's `Socket` is `Send` + `!Sync`; the SUB
   socket is now stored in a `Mutex` so the public backend can stay `Send` +
   `Sync` (as `IpcBackend` requires) without claiming concurrent `&Socket`
-  access is safe. Socket I/O takes `&mut self` on the exclusive owner behind
-  that mutex. Compile-time trait assertions lock the intended surface.
+  access is safe. Create/connect run on the initializing thread before the
+  socket is published into that mutex; recv and `reset` close take `&mut self`
+  on the exclusive owner behind the lock. Compile-time trait assertions lock
+  the intended surface.
 
 ## [0.1.0]
 
