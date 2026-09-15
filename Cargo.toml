@@ -4,12 +4,24 @@
 name = "corpus-ipc"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.98.1"
 license = "MIT OR Apache-2.0"
+authors = ["Raul Cardenas Montoya <montoyaraul34@gmail.com>"]
 description = "Inter-Process Communication (IPC) library for bridging Rust to external compute engines via ZeroMQ."
 repository = "https://github.com/Limen-Neural/corpus-ipc"
+homepage = "https://github.com/Limen-Neural/corpus-ipc"
+documentation = "https://docs.rs/corpus-ipc"
+readme = "README.md"
 keywords = ["ipc", "zmq", "ffi", "hpc", "compute"]
 categories = ["science", "network-programming", "api-bindings"]
-exclude = ["docs/"]
+# crates.io surface: licenses, README, CHANGELOG, sources. Drop agent/CI/docs trees.
+exclude = [
+    "/docs/",
+    "/.github/",
+    "/AGENTS.md",
+    "/CLAUDE.md",
+    "/.codacy.yml",
+]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -32,5 +44,9 @@ server = ["dep:axum", "dep:tokio"]
 [[bin]]
 name = "corpus_ipc_server"
 required-features = ["server"]
+
+[package.metadata.docs.rs]
+# Default crate only. The `zmq` feature compiles vendored C++ via zmq-sys.
+all-features = false
 
 [workspace]
