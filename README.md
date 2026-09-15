@@ -141,16 +141,9 @@ Current encoding rules:
   valid default (`IpcMessage` has no `Default` and no serde `other` catch-all).
 
 Bump `WireCompatibility::CURRENT` when the on-wire schema changes in a way
-existing decoders cannot ignore. See `CHANGELOG.md` for the full bump rules.
-
-```rust
-use corpus_ipc::{decode_ipc_message_json, encode_ipc_message_json, IpcMessage};
-
-let bytes = encode_ipc_message_json(&IpcMessage::Ping)?;
-let message = decode_ipc_message_json(&bytes)?;
-assert!(matches!(message, IpcMessage::Ping));
-# Ok::<(), corpus_ipc::EnvelopeError>(())
-```
+existing decoders cannot ignore. See `CHANGELOG.md` for the full bump rules,
+including when to raise `MIN_SUPPORTED`. The compiled example lives on
+`decode_ipc_message_json`.
 
 ## Crate Exports
 

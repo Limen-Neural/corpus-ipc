@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   payload is used. Unversioned 0.1.0 `IpcMessage` JSON remains accepted as
   legacy wire version 1. Unknown struct fields are ignored (forward
   compatible); unknown `IpcMessage` variants never deserialize as a default.
+
+### Changed
+
+- `serde_json` is a library dependency again (feature `raw_value`) so the
+  envelope decoder can inspect `wire_version` before deserializing a payload.
+  This reverses the 0.1.0 move of `serde_json` to a test-only (dev)
+  dependency.
 - GitHub Actions Codecov workflow (`cargo llvm-cov` LCOV upload with org
   `CODECOV_TOKEN`, slug `Limen-Neural/corpus-ipc`) (#34, RM-1203).
 
@@ -37,6 +44,11 @@ changed.
 - tightening unknown-field policy (for example `deny_unknown_fields`)
 - changing tagged-enum identity (`Spikes`, `Ping`, …) or envelope keys
   (`wire_version`, `payload`)
+
+If the new schema cannot still decode the previous payload, also raise
+`MIN_SUPPORTED` to that new version (or keep a version-specific decoder
+for the old one). Bumping only `CURRENT` leaves older versions inside
+the accepted range.
 
 **Do not bump `CURRENT` when:**
 

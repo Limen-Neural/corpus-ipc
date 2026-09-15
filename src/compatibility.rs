@@ -185,8 +185,8 @@ pub enum EnvelopeError {
     /// Envelope object lacked `payload` after the version check passed.
     #[error("missing payload on compatibility envelope")]
     MissingPayload,
-    /// Failed to parse the outer JSON document.
-    #[error("failed to decode envelope JSON: {0}")]
+    /// Failed to parse or serialize envelope JSON.
+    #[error("envelope JSON error: {0}")]
     Json(serde_json::Error),
     /// Version was supported, but the payload did not decode as `T`.
     #[error("failed to decode envelope payload: {0}")]
@@ -198,7 +198,7 @@ pub enum EnvelopeError {
 /// JSON shape:
 ///
 /// ```json
-/// {"wire_version":1,"payload":{"Ping":null}}
+/// {"wire_version":1,"payload":"Ping"}
 /// ```
 ///
 /// Transport ownership is unchanged: backends still send and receive bytes.
