@@ -32,7 +32,7 @@ link those stacks.
 | Feature | Default | What it enables |
 | --- | --- | --- |
 | *(none)* | yes | Wire models (`IpcMessage`, batches, snapshots) and `RustBackend` |
-| `zmq` | no | `ZmqIpcBackend` (vendored libzmq via `zmq-sys`; needs a C++ compiler) |
+| `zmq` | no | `ZmqIpcBackend` (vendored libzmq via `zmq-sys`; needs a C++ compiler). `Send` + `Sync` via mutex-serialized SUB socket ownership; libzmq sockets themselves are `Send` + `!Sync`. |
 | `server` | no | `corpus_ipc_server` Axum REST binary (`axum` + minimized `tokio`) |
 
 `tower` is not a direct crate dependency. Axum 0.7 depends on it unconditionally,
@@ -40,6 +40,17 @@ so it appears only when the optional `server` feature enables Axum. `serde_json`
 is a **dev-dependency** for serialization-contract tests in `models.rs`; the
 server binary uses Axum's `Json` extractor (the `json` feature), which depends
 on `serde_json` internally.
+
+### ZMQ backend concurrency
+
+`ZmqIpcBackend` is `Send` + `Sync` because `IpcBackend` requires both. libzmq
+sockets are **not** safe to share (`zmq(7)` *Thread safety*; `zmq` 0.10's
+`Socket` is `Send` + `!Sync`). This crate does not `unsafe impl Sync` on the
+socket. The SUB socket is stored in a `Mutex` and every recv/connect/close
+takes that lock. Moving the backend to another thread is supported. `initialize`,
+`process_batch`, and `reset` still take `&mut self`; concurrent process calls
+need an outer lock, which is how `corpus_ipc_server` uses
+`Arc<Mutex<Box<dyn IpcBackend>>>`.
 
 ## Installation
 
@@ -129,7 +140,7 @@ the `StimulusBatch` doc comments for the exact semantics.
   - `IpcBackend`, `HybridFlowBackend`
   - `BackendType` (`Rust`, `ZmqIpc`; deprecated `ZmqRuntime` still selects ZMQ)
   - `RustBackend`
-  - `ZmqIpcBackend` (when `zmq` feature enabled)
+  - `ZmqIpcBackend` (when `zmq` feature enabled; mutex-serialized socket ownership)
   - Deprecated compatibility aliases: `RuntimeBackend`, `ZmqRuntimeBackend`
 - Models:
   - `IpcMessage` and all batch/config/trace/gradient payload structs
