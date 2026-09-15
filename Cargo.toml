@@ -26,6 +26,8 @@ exclude = [
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
+# zmq 0.10 has no `vendored` feature (only `default` / `zmq_has`). zmq-sys
+# 0.12 always compiles libzmq from `zeromq-src`; a system libzmq is not required.
 zmq = { version = "0.10", optional = true }
 axum = { version = "0.7", optional = true, default-features = false, features = ["http1", "json", "tokio"] }
 tokio = { version = "1", optional = true, default-features = false, features = ["macros", "net", "rt-multi-thread"] }
