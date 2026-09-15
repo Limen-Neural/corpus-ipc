@@ -4,6 +4,8 @@
 //!
 //! Inter-Process Communication (IPC) library for bridging Rust to external compute engines.
 //!
+//! Repository: <https://github.com/Limen-Neural/corpus-ipc>
+//!
 //! Provides a unified interface for various backends:
 //!
 //! - [`IpcBackend`] — required backend contract (deprecated alias: `RuntimeBackend`)

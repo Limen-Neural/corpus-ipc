@@ -2,6 +2,9 @@
 
 # corpus-ipc
 
+[![CI](https://github.com/Limen-Neural/corpus-ipc/actions/workflows/ci.yml/badge.svg)](https://github.com/Limen-Neural/corpus-ipc/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 Inter-Process Communication (IPC) library for bridging Rust to external compute engines.
 
 `corpus-ipc` is the schema and transport layer for cross-process compute workflows. It provides backend abstractions for local/native execution and optional ZeroMQ IPC, plus canonical wire message models used across services.
@@ -135,6 +138,18 @@ the `StimulusBatch` doc comments for the exact semantics.
   - `IpcMessage` and all batch/config/trace/gradient payload structs
   - `IpcSpikeBatch` / `IpcTraceBatch` aliases for the IPC wire batches
   - `StimulusBatch`, `NeuromodulatorSnapshot`
+
+## Repository
+
+Canonical GitHub home: **[Limen-Neural/corpus-ipc](https://github.com/Limen-Neural/corpus-ipc)**.
+`rmems/corpus-ipc` redirects here.
+
+The [GitHub wiki](https://github.com/Limen-Neural/corpus-ipc/wiki) is **enabled**
+and is the extra-docs home (architecture, backends, REST server, ecosystem).
+In-tree [`docs/`](docs/) is a pointer only — not a second documentation site.
+
+Links to [`SynapticDistill.jl`](https://github.com/rmems/SynapticDistill.jl)
+stay on `rmems`; that sibling has not transferred.
 
 ## License
 

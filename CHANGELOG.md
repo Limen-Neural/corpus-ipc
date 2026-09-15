@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions Codecov workflow (`cargo llvm-cov` LCOV upload with org
   `CODECOV_TOKEN`, slug `Limen-Neural/corpus-ipc`) (#34, RM-1203).
 
+### Changed
+
+- Point live crate metadata and docs at `Limen-Neural/corpus-ipc` after the
+  ownership transfer (`rmems/corpus-ipc` redirects here). Document that the
+  GitHub wiki is enabled. (RM-309, #24)
+
 ## [0.1.0]
 
 First crates.io publish (RM-1141, #28).
