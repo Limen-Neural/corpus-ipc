@@ -236,8 +236,7 @@ impl<T: DeserializeOwned> WireEnvelope<T> {
     /// The payload is kept as raw JSON until the version is accepted, so a
     /// too-new/too-old envelope is rejected without building `T`.
     pub fn decode_json(bytes: &[u8]) -> Result<Self, EnvelopeError> {
-        let raw: RawEnvelope = serde_json::from_slice(bytes).map_err(EnvelopeError::Json)?;
-        envelope_from_raw_parts(raw)
+        envelope_from_raw_parts(parse_raw_envelope(bytes)?)
     }
 
     /// Decode an already-parsed JSON value, checking version before `T`.
@@ -306,7 +305,7 @@ pub fn encode_ipc_message_json(message: &IpcMessage) -> Result<Vec<u8>, Envelope
 /// assert!(matches!(message, IpcMessage::Ping));
 /// ```
 pub fn decode_ipc_message_json(bytes: &[u8]) -> Result<IpcMessage, EnvelopeError> {
-    match serde_json::from_slice::<RawEnvelope>(bytes) {
+    match parse_raw_envelope(bytes) {
         Ok(raw) if raw.wire_version.is_some() => {
             Ok(envelope_from_raw_parts::<IpcMessage>(raw)?.into_payload())
         }
@@ -314,11 +313,21 @@ pub fn decode_ipc_message_json(bytes: &[u8]) -> Result<IpcMessage, EnvelopeError
             WireCompatibility::accept(WireCompatibility::LEGACY_UNVERSIONED)?;
             serde_json::from_slice(bytes).map_err(EnvelopeError::Payload)
         }
-        Err(_) => {
-            // Unit-variant strings (`"Ping"`) and non-objects are not envelopes.
+        Err(EnvelopeError::NotAnObject) => {
+            // Unit-variant strings (`"Ping"`) are not envelopes.
             let value = serde_json::from_slice(bytes).map_err(EnvelopeError::Json)?;
             decode_ipc_message_value(value)
         }
+        Err(EnvelopeError::Json(raw_error)) => {
+            let value = serde_json::from_slice::<Value>(bytes).map_err(EnvelopeError::Json)?;
+            if let Value::Object(obj) = &value
+                && obj.contains_key("wire_version")
+            {
+                return Err(EnvelopeError::Json(raw_error));
+            }
+            decode_ipc_message_value(value)
+        }
+        Err(other) => Err(other),
     }
 }
 
@@ -348,7 +357,24 @@ struct RawEnvelope {
     #[serde(default)]
     wire_version: Option<Value>,
     #[serde(default)]
-    payload: Option<Box<RawValue>>,
+    payload: OptionalRaw,
+}
+
+/// Distinguishes a missing `payload` field from an explicit JSON `null`.
+#[derive(Default)]
+enum OptionalRaw {
+    #[default]
+    Absent,
+    Present(Box<RawValue>),
+}
+
+impl<'de> Deserialize<'de> for OptionalRaw {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Self::Present(Box::<RawValue>::deserialize(deserializer)?))
+    }
 }
 
 fn envelope_from_raw_parts<T: DeserializeOwned>(
@@ -357,12 +383,32 @@ fn envelope_from_raw_parts<T: DeserializeOwned>(
     let version_val = raw.wire_version.ok_or(EnvelopeError::MissingVersion)?;
     let version = parse_wire_version(&version_val)?;
     WireCompatibility::accept(version)?;
-    let payload_raw = raw.payload.ok_or(EnvelopeError::MissingPayload)?;
+    let OptionalRaw::Present(payload_raw) = raw.payload else {
+        return Err(EnvelopeError::MissingPayload);
+    };
     let payload = serde_json::from_str(payload_raw.get()).map_err(EnvelopeError::Payload)?;
     Ok(WireEnvelope {
         wire_version: version,
         payload,
     })
+}
+
+fn parse_raw_envelope(bytes: &[u8]) -> Result<RawEnvelope, EnvelopeError> {
+    match bytes.iter().copied().find(|b| !b.is_ascii_whitespace()) {
+        Some(b'{') => serde_json::from_slice(bytes).map_err(EnvelopeError::Json),
+        Some(_) => {
+            if json_is_valid_non_object(bytes) {
+                Err(EnvelopeError::NotAnObject)
+            } else {
+                serde_json::from_slice(bytes).map_err(EnvelopeError::Json)
+            }
+        }
+        None => serde_json::from_slice(bytes).map_err(EnvelopeError::Json),
+    }
+}
+
+fn json_is_valid_non_object(bytes: &[u8]) -> bool {
+    matches!(serde_json::from_slice::<Value>(bytes), Ok(value) if !value.is_object())
 }
 
 fn parse_wire_version(value: &Value) -> Result<u32, EnvelopeError> {
@@ -640,6 +686,50 @@ mod tests {
         assert!(
             matches!(err, EnvelopeError::Payload(_)),
             "supported-version unknown variant is a payload error: {err}"
+        );
+    }
+
+    #[test]
+    fn compatibility_decode_json_non_object_is_not_an_object() {
+        let err = WireEnvelope::<IpcMessage>::decode_json(br#""Ping""#).unwrap_err();
+        assert!(
+            matches!(err, EnvelopeError::NotAnObject),
+            "string JSON should be NotAnObject, got {err}"
+        );
+        let err = WireEnvelope::<IpcMessage>::decode_json(b"[]").unwrap_err();
+        assert!(
+            matches!(err, EnvelopeError::NotAnObject),
+            "array JSON should be NotAnObject, got {err}"
+        );
+    }
+
+    #[test]
+    fn compatibility_decode_json_malformed_is_json_error() {
+        let err = WireEnvelope::<IpcMessage>::decode_json(b"{").unwrap_err();
+        assert!(matches!(err, EnvelopeError::Json(_)));
+    }
+
+    #[test]
+    fn compatibility_duplicate_wire_version_is_rejected() {
+        let bytes = br#"{"wire_version":1,"wire_version":2,"payload":"Ping"}"#;
+        let err = decode_ipc_message_json(bytes).expect_err("duplicate wire_version must fail");
+        assert!(
+            matches!(err, EnvelopeError::Json(_)),
+            "duplicate keys must not fall through to last-win Value decode: {err}"
+        );
+    }
+
+    #[test]
+    fn compatibility_null_payload_deserializes_when_t_accepts_null() {
+        let bytes = br#"{"wire_version":1,"payload":null}"#;
+        let decoded = WireEnvelope::<Option<u32>>::decode_json(bytes).unwrap();
+        assert_eq!(decoded.payload, None);
+        let err = WireEnvelope::<Option<u32>>::decode_json(br#"{"wire_version":1}"#).unwrap_err();
+        assert!(matches!(err, EnvelopeError::MissingPayload));
+        let err = decode_ipc_message_json(bytes).unwrap_err();
+        assert!(
+            matches!(err, EnvelopeError::Payload(_)),
+            "IpcMessage must not treat null payload as missing: {err}"
         );
     }
 }
