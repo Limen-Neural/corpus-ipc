@@ -23,7 +23,111 @@
 //! when the cross-repo collision would otherwise be unclear. Do not merge the
 //! IPC and training definitions.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::validation::{
+    ProtocolLimits, Validate, ValidationError, add_to_total, bounded_map, bounded_opt_string,
+    bounded_opt_vec, bounded_string, bounded_vec, check_count, check_finite, check_finite_slice,
+    check_opt_string, check_range, check_string, check_unique_by, finite_f32_at,
+};
+
+fn de_opt_session_id<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    bounded_opt_string(d, ProtocolLimits::DEFAULT.max_string_bytes, "session_id")
+}
+
+fn de_session_id<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    bounded_string(d, ProtocolLimits::DEFAULT.max_string_bytes, "session_id")
+}
+
+fn de_source<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    bounded_opt_string(d, ProtocolLimits::DEFAULT.max_string_bytes, "source")
+}
+
+fn de_layer_id<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    bounded_string(d, ProtocolLimits::DEFAULT.max_string_bytes, "layer_id")
+}
+
+fn de_values<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<f32>, D::Error> {
+    bounded_vec(d, ProtocolLimits::DEFAULT.max_channel_values, "values")
+}
+
+fn de_embedding<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<f32>, D::Error> {
+    bounded_vec(d, ProtocolLimits::DEFAULT.max_channel_values, "embedding")
+}
+
+fn de_valid_mask<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Vec<bool>>, D::Error> {
+    bounded_opt_vec(d, ProtocolLimits::DEFAULT.max_channel_values, "valid_mask")
+}
+
+fn de_spikes<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<SpikeEvent>, D::Error> {
+    bounded_vec(d, ProtocolLimits::DEFAULT.max_spike_events, "spikes")
+}
+
+fn de_traces<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<TraceData>, D::Error> {
+    bounded_vec(d, ProtocolLimits::DEFAULT.max_traces, "traces")
+}
+
+fn de_gradient_rows<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<GradientUpdate>, D::Error> {
+    bounded_vec(d, ProtocolLimits::DEFAULT.max_gradients, "gradients")
+}
+
+fn de_gradient_values<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<f32>, D::Error> {
+    bounded_vec(d, ProtocolLimits::DEFAULT.max_channel_values, "gradients")
+}
+
+fn de_eligibility_trace<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Vec<f32>>, D::Error> {
+    bounded_opt_vec(
+        d,
+        ProtocolLimits::DEFAULT.max_channel_values,
+        "eligibility_trace",
+    )
+}
+
+fn de_float_array<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<f32>, D::Error> {
+    bounded_vec(d, ProtocolLimits::DEFAULT.max_channel_values, "config")
+}
+
+fn de_config_string<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    bounded_string(d, ProtocolLimits::DEFAULT.max_string_bytes, "config")
+}
+
+fn de_metadata_custom<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<std::collections::HashMap<String, String>, D::Error> {
+    bounded_map(
+        d,
+        ProtocolLimits::DEFAULT.max_metadata_entries,
+        ProtocolLimits::DEFAULT.max_string_bytes,
+        "custom",
+    )
+}
+
+fn de_config_map<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<std::collections::HashMap<String, ConfigValue>, D::Error> {
+    bounded_map(
+        d,
+        ProtocolLimits::DEFAULT.max_metadata_entries,
+        ProtocolLimits::DEFAULT.max_string_bytes,
+        "config",
+    )
+}
+
+fn de_finite_f32<'de, D: Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    finite_f32_at(d, "value")
+}
+
+fn de_loss<'de, D: Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    finite_f32_at(d, "Loss")
+}
+
+fn de_strength<'de, D: Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    finite_f32_at(d, "strength")
+}
+
+fn de_trace_value<'de, D: Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    finite_f32_at(d, "trace_value")
+}
 
 /// 4-runtime snapshot decoded from the remote compute's 88-byte generic packet.
 ///
@@ -75,7 +179,7 @@ struct NeuromodulatorSnapshotWire {
 }
 
 impl TryFrom<NeuromodulatorSnapshotWire> for NeuromodulatorSnapshot {
-    type Error = String;
+    type Error = ValidationError;
 
     fn try_from(wire: NeuromodulatorSnapshotWire) -> Result<Self, Self::Error> {
         let snapshot = NeuromodulatorSnapshot {
@@ -93,13 +197,13 @@ impl TryFrom<NeuromodulatorSnapshotWire> for NeuromodulatorSnapshot {
 impl NeuromodulatorSnapshot {
     /// Parse from the 4 generic score floats in bytes `[72..88]` of a generic packet.
     ///
-    /// Calls [`Self::validate`] internally and returns `Err` if the decoded
+    /// Calls [`Validate::validate`] internally and returns `Err` if the decoded
     /// bytes are out of the documented ranges or non-finite. This keeps
     /// byte-packet ingress consistent with JSON ingress (`IpcMessage::Neuromodulators`
     /// deserialization also validates) — otherwise a bad packet would only
     /// surface as a confusing "failed to deserialize" error at the receiver,
     /// pointing away from where the bad bytes actually came from.
-    pub fn from_scores(tick: i64, scores: &[f32; 4]) -> Result<Self, String> {
+    pub fn from_scores(tick: i64, scores: &[f32; 4]) -> Result<Self, ValidationError> {
         let snapshot = Self {
             tick,
             dopamine: scores[0],
@@ -110,34 +214,14 @@ impl NeuromodulatorSnapshot {
         snapshot.validate()?;
         Ok(snapshot)
     }
+}
 
-    /// Check the documented ranges for each field.
-    ///
-    /// Fields are public for direct Rust construction, so a value built via
-    /// struct literal is not guaranteed to satisfy the documented ranges
-    /// (`dopamine`, `cortisol`, `acetylcholine` in `[0, 1]`; `tempo` in
-    /// `[0.5, 2.0]`) or even to be finite. Deserialization (this type is
-    /// reachable via [`IpcMessage::Neuromodulators`]) already enforces this
-    /// check via a `TryFrom` shadow type; call this explicitly only after
-    /// constructing one directly in Rust.
-    pub fn validate(&self) -> Result<(), String> {
-        for (name, value, min, max) in [
-            ("dopamine", self.dopamine, 0.0, 1.0),
-            ("cortisol", self.cortisol, 0.0, 1.0),
-            ("acetylcholine", self.acetylcholine, 0.0, 1.0),
-            ("tempo", self.tempo, 0.5, 2.0),
-        ] {
-            if !value.is_finite() {
-                return Err(format!(
-                    "NeuromodulatorSnapshot: {name} is not finite: {value}"
-                ));
-            }
-            if value < min || value > max {
-                return Err(format!(
-                    "NeuromodulatorSnapshot: {name} ({value}) out of documented range [{min}, {max}]"
-                ));
-            }
-        }
+impl Validate for NeuromodulatorSnapshot {
+    fn validate_with(&self, _limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_range("dopamine", self.dopamine, 0.0, 1.0)?;
+        check_range("cortisol", self.cortisol, 0.0, 1.0)?;
+        check_range("acetylcholine", self.acetylcholine, 0.0, 1.0)?;
+        check_range("tempo", self.tempo, 0.5, 2.0)?;
         Ok(())
     }
 }
@@ -163,9 +247,9 @@ pub enum IpcMessage {
     /// invalid/missing-channel semantics.
     Stimuli(StimulusBatch),
     /// Typed neuromodulator ingress, replacing an unstructured float tail.
-    /// See [`NeuromodulatorSnapshot`] and [`NeuromodulatorSnapshot::validate`].
+    /// See [`NeuromodulatorSnapshot`] and [`Validate`].
     Neuromodulators(NeuromodulatorSnapshot),
-    Loss(f32),
+    Loss(#[serde(deserialize_with = "de_loss")] f32),
     ConfigUpdate(ConfigPayload),
 
     // Output messages
@@ -213,7 +297,7 @@ pub enum IpcMessage {
 /// `valid_mask` whose length differs from `values.len()` fails to
 /// deserialize (via [`StimulusBatch::validate`] through a `TryFrom` shadow
 /// type), rather than silently producing an inconsistent instance. Call
-/// [`StimulusBatch::validate`] explicitly after constructing one directly in
+/// [`Validate::validate`] explicitly after constructing one directly in
 /// Rust (which bypasses deserialization) to get the same check.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(try_from = "StimulusBatchWire")]
@@ -233,43 +317,50 @@ pub struct StimulusBatch {
     pub metadata: Option<BatchMetadata>,
 }
 
-impl StimulusBatch {
-    /// Check the `valid_mask`-length invariant documented on this type.
-    ///
-    /// Returns `Err` describing the mismatch when `valid_mask` is `Some` and
-    /// its length differs from `values.len()`. Returns `Ok(())` when
-    /// `valid_mask` is `None` or already matches.
-    pub fn validate(&self) -> Result<(), String> {
-        if let Some(mask) = &self.valid_mask
-            && mask.len() != self.values.len()
-        {
-            return Err(format!(
-                "StimulusBatch: valid_mask length ({}) must match values length ({})",
-                mask.len(),
-                self.values.len()
-            ));
+impl Validate for StimulusBatch {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_opt_string("session_id", self.session_id.as_deref(), limits)?;
+        check_count("values", self.values.len(), limits.max_channel_values)?;
+        check_finite_slice("values", &self.values)?;
+        if let Some(mask) = &self.valid_mask {
+            check_count("valid_mask", mask.len(), limits.max_channel_values)?;
+            if mask.len() != self.values.len() {
+                return Err(ValidationError::length_mismatch(
+                    "valid_mask",
+                    mask.len(),
+                    self.values.len(),
+                ));
+            }
+        }
+        let mut total = 0;
+        add_to_total(&mut total, self.values.len(), limits, "aggregate")?;
+        if let Some(metadata) = &self.metadata {
+            metadata.validate_with(limits)?;
+            add_to_total(&mut total, metadata.custom.len(), limits, "aggregate")?;
         }
         Ok(())
     }
 }
 
 /// Deserialization-only shadow of [`StimulusBatch`] with the identical wire
-/// shape. `StimulusBatch`'s real `Deserialize` impl (below) goes through
-/// this type and [`StimulusBatch::validate`] so a malformed `valid_mask`
-/// length is rejected at deserialization instead of producing an
-/// inconsistent instance.
+/// shape. `StimulusBatch`'s real `Deserialize` impl goes through this type and
+/// [`Validate::validate`] so a malformed `valid_mask` length, non-finite
+/// value, or oversize payload is rejected at deserialization.
 #[derive(Deserialize)]
 struct StimulusBatchWire {
+    #[serde(deserialize_with = "de_opt_session_id")]
     session_id: Option<String>,
     batch_id: u64,
     timestamp: u64,
+    #[serde(deserialize_with = "de_values")]
     values: Vec<f32>,
+    #[serde(deserialize_with = "de_valid_mask")]
     valid_mask: Option<Vec<bool>>,
     metadata: Option<BatchMetadata>,
 }
 
 impl TryFrom<StimulusBatchWire> for StimulusBatch {
-    type Error = String;
+    type Error = ValidationError;
 
     fn try_from(wire: StimulusBatchWire) -> Result<Self, Self::Error> {
         let batch = StimulusBatch {
@@ -299,6 +390,7 @@ impl TryFrom<StimulusBatchWire> for StimulusBatch {
 /// Names stay `SpikeBatch` so existing Rust imports and serde identifiers
 /// remain compatible (RM-324 / #7).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(try_from = "SpikeBatchWire")]
 pub struct SpikeBatch {
     /// Optional session ID for concurrent experiment isolation.
     pub session_id: Option<String>,
@@ -312,6 +404,52 @@ pub struct SpikeBatch {
     pub metadata: Option<BatchMetadata>,
 }
 
+#[derive(Deserialize)]
+struct SpikeBatchWire {
+    #[serde(deserialize_with = "de_opt_session_id")]
+    session_id: Option<String>,
+    batch_id: u64,
+    timestamp: u64,
+    #[serde(deserialize_with = "de_spikes")]
+    spikes: Vec<SpikeEvent>,
+    metadata: Option<BatchMetadata>,
+}
+
+impl TryFrom<SpikeBatchWire> for SpikeBatch {
+    type Error = ValidationError;
+
+    fn try_from(wire: SpikeBatchWire) -> Result<Self, Self::Error> {
+        let batch = SpikeBatch {
+            session_id: wire.session_id,
+            batch_id: wire.batch_id,
+            timestamp: wire.timestamp,
+            spikes: wire.spikes,
+            metadata: wire.metadata,
+        };
+        batch.validate()?;
+        Ok(batch)
+    }
+}
+
+impl Validate for SpikeBatch {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_opt_string("session_id", self.session_id.as_deref(), limits)?;
+        check_count("spikes", self.spikes.len(), limits.max_spike_events)?;
+        let mut total = 0;
+        add_to_total(&mut total, self.spikes.len(), limits, "aggregate")?;
+        for (index, spike) in self.spikes.iter().enumerate() {
+            spike
+                .validate_with(limits)
+                .map_err(|err| prefix_path(err, &format!("spikes[{index}]")))?;
+        }
+        if let Some(metadata) = &self.metadata {
+            metadata.validate_with(limits)?;
+            add_to_total(&mut total, metadata.custom.len(), limits, "aggregate")?;
+        }
+        Ok(())
+    }
+}
+
 /// Explicit IPC-domain name for [`SpikeBatch`].
 ///
 /// Same type and same wire format. Prefer this alias in new code that sits
@@ -322,6 +460,7 @@ pub type IpcSpikeBatch = SpikeBatch;
 ///
 /// An element of an IPC [`SpikeBatch`], not a SynapticDistill training row.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(try_from = "SpikeEventWire")]
 pub struct SpikeEvent {
     /// Compute channel or channel identifier.
     pub channel: u16,
@@ -331,8 +470,37 @@ pub struct SpikeEvent {
     pub strength: f32,
 }
 
+#[derive(Deserialize)]
+struct SpikeEventWire {
+    channel: u16,
+    time: u32,
+    #[serde(deserialize_with = "de_strength")]
+    strength: f32,
+}
+
+impl TryFrom<SpikeEventWire> for SpikeEvent {
+    type Error = ValidationError;
+
+    fn try_from(wire: SpikeEventWire) -> Result<Self, Self::Error> {
+        let event = SpikeEvent {
+            channel: wire.channel,
+            time: wire.time,
+            strength: wire.strength,
+        };
+        event.validate()?;
+        Ok(event)
+    }
+}
+
+impl Validate for SpikeEvent {
+    fn validate_with(&self, _limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_finite("strength", self.strength)
+    }
+}
+
 /// Batch of embeddings for projector and transformer components.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(try_from = "EmbeddingBatchWire")]
 pub struct EmbeddingBatch {
     /// Optional session ID for concurrent experiment isolation.
     pub session_id: Option<String>,
@@ -344,8 +512,50 @@ pub struct EmbeddingBatch {
     pub sequence_length: usize,
 }
 
+#[derive(Deserialize)]
+struct EmbeddingBatchWire {
+    #[serde(deserialize_with = "de_opt_session_id")]
+    session_id: Option<String>,
+    batch_id: u64,
+    #[serde(deserialize_with = "de_embedding")]
+    embedding: Vec<f32>,
+    sequence_length: usize,
+}
+
+impl TryFrom<EmbeddingBatchWire> for EmbeddingBatch {
+    type Error = ValidationError;
+
+    fn try_from(wire: EmbeddingBatchWire) -> Result<Self, Self::Error> {
+        let batch = EmbeddingBatch {
+            session_id: wire.session_id,
+            batch_id: wire.batch_id,
+            embedding: wire.embedding,
+            sequence_length: wire.sequence_length,
+        };
+        batch.validate()?;
+        Ok(batch)
+    }
+}
+
+impl Validate for EmbeddingBatch {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_opt_string("session_id", self.session_id.as_deref(), limits)?;
+        check_count("embedding", self.embedding.len(), limits.max_channel_values)?;
+        check_count(
+            "sequence_length",
+            self.sequence_length,
+            limits.max_aggregate_records,
+        )?;
+        check_finite_slice("embedding", &self.embedding)?;
+        let mut total = 0;
+        add_to_total(&mut total, self.embedding.len(), limits, "aggregate")?;
+        Ok(())
+    }
+}
+
 /// Gradient update batch from external training or optimization algorithms.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(try_from = "GradientBatchWire")]
 pub struct GradientBatch {
     /// Session ID for routing back to correct experiment.
     pub session_id: String,
@@ -355,8 +565,52 @@ pub struct GradientBatch {
     pub gradients: Vec<GradientUpdate>,
 }
 
+#[derive(Deserialize)]
+struct GradientBatchWire {
+    #[serde(deserialize_with = "de_session_id")]
+    session_id: String,
+    batch_id: u64,
+    #[serde(deserialize_with = "de_gradient_rows")]
+    gradients: Vec<GradientUpdate>,
+}
+
+impl TryFrom<GradientBatchWire> for GradientBatch {
+    type Error = ValidationError;
+
+    fn try_from(wire: GradientBatchWire) -> Result<Self, Self::Error> {
+        let batch = GradientBatch {
+            session_id: wire.session_id,
+            batch_id: wire.batch_id,
+            gradients: wire.gradients,
+        };
+        batch.validate()?;
+        Ok(batch)
+    }
+}
+
+impl Validate for GradientBatch {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_string("session_id", &self.session_id, limits)?;
+        check_count("gradients", self.gradients.len(), limits.max_gradients)?;
+        let mut total = 0;
+        add_to_total(&mut total, self.gradients.len(), limits, "aggregate")?;
+        for (index, update) in self.gradients.iter().enumerate() {
+            update
+                .validate_with(limits)
+                .map_err(|err| prefix_path(err, &format!("gradients[{index}]")))?;
+            add_to_total(&mut total, update.gradients.len(), limits, "aggregate")?;
+            if let Some(trace) = &update.eligibility_trace {
+                add_to_total(&mut total, trace.len(), limits, "aggregate")?;
+            }
+        }
+        check_unique_by("gradients", &self.gradients, |row| row.layer_id.clone())?;
+        Ok(())
+    }
+}
+
 /// Individual gradient update for a specific layer or parameter.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(try_from = "GradientUpdateWire")]
 pub struct GradientUpdate {
     /// Target layer identifier.
     pub layer_id: String,
@@ -364,6 +618,43 @@ pub struct GradientUpdate {
     pub gradients: Vec<f32>,
     /// Optional eligibility trace for E-prop algorithms.
     pub eligibility_trace: Option<Vec<f32>>,
+}
+
+#[derive(Deserialize)]
+struct GradientUpdateWire {
+    #[serde(deserialize_with = "de_layer_id")]
+    layer_id: String,
+    #[serde(deserialize_with = "de_gradient_values")]
+    gradients: Vec<f32>,
+    #[serde(default, deserialize_with = "de_eligibility_trace")]
+    eligibility_trace: Option<Vec<f32>>,
+}
+
+impl TryFrom<GradientUpdateWire> for GradientUpdate {
+    type Error = ValidationError;
+
+    fn try_from(wire: GradientUpdateWire) -> Result<Self, Self::Error> {
+        let update = GradientUpdate {
+            layer_id: wire.layer_id,
+            gradients: wire.gradients,
+            eligibility_trace: wire.eligibility_trace,
+        };
+        update.validate()?;
+        Ok(update)
+    }
+}
+
+impl Validate for GradientUpdate {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_string("layer_id", &self.layer_id, limits)?;
+        check_count("gradients", self.gradients.len(), limits.max_channel_values)?;
+        check_finite_slice("gradients", &self.gradients)?;
+        if let Some(trace) = &self.eligibility_trace {
+            check_count("eligibility_trace", trace.len(), limits.max_channel_values)?;
+            check_finite_slice("eligibility_trace", trace)?;
+        }
+        Ok(())
+    }
 }
 
 /// IPC transport batch of eligibility traces for credit assignment.
@@ -379,6 +670,7 @@ pub struct GradientUpdate {
 /// Names stay `TraceBatch` so existing Rust imports and serde identifiers
 /// remain compatible (RM-324 / #7).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(try_from = "TraceBatchWire")]
 pub struct TraceBatch {
     /// Session ID for routing.
     pub session_id: String,
@@ -394,10 +686,50 @@ pub struct TraceBatch {
 /// next to SynapticDistill training types.
 pub type IpcTraceBatch = TraceBatch;
 
+#[derive(Deserialize)]
+struct TraceBatchWire {
+    #[serde(deserialize_with = "de_session_id")]
+    session_id: String,
+    batch_id: u64,
+    #[serde(deserialize_with = "de_traces")]
+    traces: Vec<TraceData>,
+}
+
+impl TryFrom<TraceBatchWire> for TraceBatch {
+    type Error = ValidationError;
+
+    fn try_from(wire: TraceBatchWire) -> Result<Self, Self::Error> {
+        let batch = TraceBatch {
+            session_id: wire.session_id,
+            batch_id: wire.batch_id,
+            traces: wire.traces,
+        };
+        batch.validate()?;
+        Ok(batch)
+    }
+}
+
+impl Validate for TraceBatch {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_string("session_id", &self.session_id, limits)?;
+        check_count("traces", self.traces.len(), limits.max_traces)?;
+        let mut total = 0;
+        add_to_total(&mut total, self.traces.len(), limits, "aggregate")?;
+        for (index, trace) in self.traces.iter().enumerate() {
+            trace
+                .validate_with(limits)
+                .map_err(|err| prefix_path(err, &format!("traces[{index}]")))?;
+        }
+        check_unique_by("traces", &self.traces, |row| row.channel_id)?;
+        Ok(())
+    }
+}
+
 /// Individual eligibility trace data on the IPC wire.
 ///
 /// An element of an IPC [`TraceBatch`], not a SynapticDistill training trace.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(try_from = "TraceDataWire")]
 pub struct TraceData {
     /// Channel or synapse identifier.
     #[serde(alias = "neuron_id")]
@@ -408,13 +740,86 @@ pub struct TraceData {
     pub last_spike_time: u32,
 }
 
+#[derive(Deserialize)]
+struct TraceDataWire {
+    #[serde(alias = "neuron_id")]
+    channel_id: u16,
+    #[serde(deserialize_with = "de_trace_value")]
+    trace_value: f32,
+    last_spike_time: u32,
+}
+
+impl TryFrom<TraceDataWire> for TraceData {
+    type Error = ValidationError;
+
+    fn try_from(wire: TraceDataWire) -> Result<Self, Self::Error> {
+        let data = TraceData {
+            channel_id: wire.channel_id,
+            trace_value: wire.trace_value,
+            last_spike_time: wire.last_spike_time,
+        };
+        data.validate()?;
+        Ok(data)
+    }
+}
+
+impl Validate for TraceData {
+    fn validate_with(&self, _limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_finite("trace_value", self.trace_value)
+    }
+}
+
 /// Configuration payload for runtime parameter updates.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(try_from = "ConfigPayloadWire")]
 pub struct ConfigPayload {
     /// Target session (None = global).
     pub session_id: Option<String>,
     /// Configuration key-value pairs.
     pub config: std::collections::HashMap<String, ConfigValue>,
+}
+
+#[derive(Deserialize)]
+struct ConfigPayloadWire {
+    #[serde(deserialize_with = "de_opt_session_id")]
+    session_id: Option<String>,
+    #[serde(deserialize_with = "de_config_map")]
+    config: std::collections::HashMap<String, ConfigValue>,
+}
+
+impl TryFrom<ConfigPayloadWire> for ConfigPayload {
+    type Error = ValidationError;
+
+    fn try_from(wire: ConfigPayloadWire) -> Result<Self, Self::Error> {
+        let payload = ConfigPayload {
+            session_id: wire.session_id,
+            config: wire.config,
+        };
+        payload.validate()?;
+        Ok(payload)
+    }
+}
+
+impl Validate for ConfigPayload {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_opt_string("session_id", self.session_id.as_deref(), limits)?;
+        check_count("config", self.config.len(), limits.max_metadata_entries)?;
+        let mut total = 0;
+        add_to_total(&mut total, self.config.len(), limits, "aggregate")?;
+        for (key, value) in &self.config {
+            if key.is_empty() {
+                return Err(ValidationError::nested_metadata("config.<empty>"));
+            }
+            check_string("config.<key>", key, limits)?;
+            value
+                .validate_with(limits)
+                .map_err(|err| prefix_path(err, &format!("config.{key}")))?;
+            if let ConfigValue::FloatArray(values) = value {
+                add_to_total(&mut total, values.len(), limits, "aggregate")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Configuration value types.
@@ -438,7 +843,7 @@ pub enum ConfigValue {
     ///
     /// Because this is the first variant in an untagged enum, JSON
     /// numbers (integers and floats) deserialize as `Float`.
-    Float(f32),
+    Float(#[serde(deserialize_with = "de_finite_f32")] f32),
 
     /// Integer value (u64).
     ///
@@ -451,15 +856,30 @@ pub enum ConfigValue {
     /// String value.
     ///
     /// Allows string-valued config (e.g. mode names, paths) in `ConfigPayload::config`.
-    String(String),
+    String(#[serde(deserialize_with = "de_config_string")] String),
 
     /// Boolean value.
     Boolean(bool),
-    FloatArray(Vec<f32>),
+    FloatArray(#[serde(deserialize_with = "de_float_array")] Vec<f32>),
+}
+
+impl Validate for ConfigValue {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        match self {
+            Self::Float(value) => check_finite("value", *value),
+            Self::Integer(_) | Self::Boolean(_) => Ok(()),
+            Self::String(value) => check_string("value", value, limits),
+            Self::FloatArray(values) => {
+                check_count("value", values.len(), limits.max_channel_values)?;
+                check_finite_slice("value", values)
+            }
+        }
+    }
 }
 
 /// Optional batch metadata for debugging and monitoring.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(try_from = "BatchMetadataWire")]
 pub struct BatchMetadata {
     /// Processing latency in nanoseconds.
     pub processing_latency_ns: Option<u64>,
@@ -468,6 +888,73 @@ pub struct BatchMetadata {
     /// Additional metadata fields.
     pub custom: std::collections::HashMap<String, String>,
 }
+
+#[derive(Deserialize)]
+struct BatchMetadataWire {
+    processing_latency_ns: Option<u64>,
+    #[serde(default, deserialize_with = "de_source")]
+    source: Option<String>,
+    #[serde(default, deserialize_with = "de_metadata_custom")]
+    custom: std::collections::HashMap<String, String>,
+}
+
+impl TryFrom<BatchMetadataWire> for BatchMetadata {
+    type Error = ValidationError;
+
+    fn try_from(wire: BatchMetadataWire) -> Result<Self, Self::Error> {
+        let metadata = BatchMetadata {
+            processing_latency_ns: wire.processing_latency_ns,
+            source: wire.source,
+            custom: wire.custom,
+        };
+        metadata.validate()?;
+        Ok(metadata)
+    }
+}
+
+impl Validate for BatchMetadata {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        check_opt_string("source", self.source.as_deref(), limits)?;
+        check_count("custom", self.custom.len(), limits.max_metadata_entries)?;
+        for (key, value) in &self.custom {
+            if key.is_empty() {
+                return Err(ValidationError::nested_metadata("custom.<empty>"));
+            }
+            check_string("custom.<key>", key, limits)?;
+            check_string("custom.<value>", value, limits)?;
+        }
+        Ok(())
+    }
+}
+
+impl Validate for IpcMessage {
+    fn validate_with(&self, limits: ProtocolLimits) -> Result<(), ValidationError> {
+        match self {
+            Self::Spikes(batch) => batch.validate_with(limits),
+            Self::Embeddings(batch) => batch.validate_with(limits),
+            Self::Stimuli(batch) => batch.validate_with(limits),
+            Self::Neuromodulators(snapshot) => snapshot.validate_with(limits),
+            Self::Loss(value) => check_finite("Loss", *value),
+            Self::ConfigUpdate(payload) => payload.validate_with(limits),
+            Self::GradientUpdate(batch) => batch.validate_with(limits),
+            Self::EligibilityTraces(batch) => batch.validate_with(limits),
+            Self::TrainingComplete | Self::Shutdown | Self::Ping => Ok(()),
+        }
+    }
+}
+
+fn prefix_path(mut err: ValidationError, prefix: &str) -> ValidationError {
+    if err.path.is_empty() {
+        err.path = prefix.to_owned();
+    } else {
+        err.path = format!("{prefix}.{}", err.path);
+    }
+    err
+}
+
+#[cfg(test)]
+#[path = "models_limits_tests.rs"]
+mod limits_tests;
 
 #[cfg(test)]
 mod tests {
@@ -526,7 +1013,8 @@ mod tests {
         // tempo (scores[3]) outside documented [0.5, 2.0]
         let err = NeuromodulatorSnapshot::from_scores(1, &[0.4, 0.3, 0.2, 3.0])
             .expect_err("out-of-range tempo byte must fail construction, not just deserialization");
-        assert!(err.contains("tempo"), "error should name the field: {err}");
+        assert_eq!(err.path, "tempo");
+        assert_eq!(err.kind, crate::validation::ValidationKind::OutOfRange);
     }
 
     #[test]
@@ -536,7 +1024,8 @@ mod tests {
         let err = snap
             .validate()
             .expect_err("out-of-range tempo must fail validation");
-        assert!(err.contains("tempo"), "error should name the field: {err}");
+        assert_eq!(err.path, "tempo");
+        assert_eq!(err.kind, crate::validation::ValidationKind::OutOfRange);
     }
 
     #[test]
@@ -546,10 +1035,8 @@ mod tests {
         let err = snap
             .validate()
             .expect_err("non-finite dopamine must fail validation");
-        assert!(
-            err.contains("dopamine"),
-            "error should name the field: {err}"
-        );
+        assert_eq!(err.path, "dopamine");
+        assert_eq!(err.kind, crate::validation::ValidationKind::NonFinite);
     }
 
     #[test]
@@ -709,11 +1196,16 @@ mod tests {
         let err = batch
             .validate()
             .expect_err("mismatched mask must fail validation");
-        assert!(
-            err.contains('3'),
-            "error should mention values length: {err}"
+        assert_eq!(err.path, "valid_mask");
+        assert_eq!(err.kind, crate::validation::ValidationKind::LengthMismatch);
+        assert_eq!(
+            err.actual,
+            Some(crate::validation::ValidationMeasure::Count(2))
         );
-        assert!(err.contains('2'), "error should mention mask length: {err}");
+        assert_eq!(
+            err.limit,
+            Some(crate::validation::ValidationMeasure::Count(3))
+        );
     }
 
     #[test]

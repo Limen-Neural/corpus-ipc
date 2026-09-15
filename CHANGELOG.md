@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Typed `ValidationError` / `ValidationKind` and `ProtocolLimits` for wire
+  payload validation (LIM-1231). `validate()` is implemented for every public
+  batch and message payload; deserialization reuses the same checks and
+  rejects oversize collections as early as serde permits.
+
 - GitHub Actions Codecov workflow (`cargo llvm-cov` LCOV upload with org
   `CODECOV_TOKEN`, slug `Limen-Neural/corpus-ipc`) (#34, RM-1203).
 

@@ -30,6 +30,7 @@ pub mod error;
 pub mod models;
 pub mod rust_backend;
 pub mod trait_def;
+pub mod validation;
 
 #[cfg(feature = "zmq")]
 pub mod zmq_backend;
@@ -46,6 +47,10 @@ pub use models::{
 pub use rust_backend::RustBackend;
 #[allow(deprecated)]
 pub use trait_def::{BackendFactory, BackendType, HybridFlowBackend, IpcBackend, RuntimeBackend};
+/// Re-export typed wire validation.
+pub use validation::{
+    ProtocolLimits, Validate, ValidationError, ValidationKind, ValidationMeasure,
+};
 
 #[cfg(feature = "zmq")]
 pub use zmq_backend::ZmqIpcBackend;

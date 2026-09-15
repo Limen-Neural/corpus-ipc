@@ -135,6 +135,7 @@ the `StimulusBatch` doc comments for the exact semantics.
   - `IpcMessage` and all batch/config/trace/gradient payload structs
   - `IpcSpikeBatch` / `IpcTraceBatch` aliases for the IPC wire batches
   - `StimulusBatch`, `NeuromodulatorSnapshot`
+  - `ValidationError`, `ValidationKind`, `ProtocolLimits`, `Validate`
 
 ## License
 
