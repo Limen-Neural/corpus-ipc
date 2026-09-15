@@ -44,7 +44,8 @@ use serde::{Deserialize, Serialize};
 ///   *Nature Reviews Neuroscience*, 10(6), 410–422.
 /// - Hasselmo, M. E. (1999). Neuromodulation: acetylcholine and memory
 ///   consolidation. *Trends in Cognitive Sciences*, 3(9), 351–359.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "NeuromodulatorSnapshotWire")]
 pub struct NeuromodulatorSnapshot {
     /// Tick counter from the remote compute (monotonically increasing).
     pub tick: i64,
@@ -58,23 +59,93 @@ pub struct NeuromodulatorSnapshot {
     pub tempo: f32,
 }
 
+/// Deserialization-only shadow of [`NeuromodulatorSnapshot`] with the
+/// identical wire shape. `NeuromodulatorSnapshot`'s real `Deserialize` impl
+/// goes through this type and [`NeuromodulatorSnapshot::validate`] so an
+/// out-of-range or non-finite field is rejected at deserialization instead
+/// of silently reaching consumers (this type is reachable via
+/// [`IpcMessage::Neuromodulators`]).
+#[derive(Deserialize)]
+struct NeuromodulatorSnapshotWire {
+    tick: i64,
+    dopamine: f32,
+    cortisol: f32,
+    acetylcholine: f32,
+    tempo: f32,
+}
+
+impl TryFrom<NeuromodulatorSnapshotWire> for NeuromodulatorSnapshot {
+    type Error = String;
+
+    fn try_from(wire: NeuromodulatorSnapshotWire) -> Result<Self, Self::Error> {
+        let snapshot = NeuromodulatorSnapshot {
+            tick: wire.tick,
+            dopamine: wire.dopamine,
+            cortisol: wire.cortisol,
+            acetylcholine: wire.acetylcholine,
+            tempo: wire.tempo,
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
+    }
+}
+
 impl NeuromodulatorSnapshot {
     /// Parse from the 4 generic score floats in bytes `[72..88]` of a generic packet.
-    pub fn from_scores(tick: i64, scores: &[f32; 4]) -> Self {
-        Self {
+    ///
+    /// Calls [`Self::validate`] internally and returns `Err` if the decoded
+    /// bytes are out of the documented ranges or non-finite. This keeps
+    /// byte-packet ingress consistent with JSON ingress (`IpcMessage::Neuromodulators`
+    /// deserialization also validates) — otherwise a bad packet would only
+    /// surface as a confusing "failed to deserialize" error at the receiver,
+    /// pointing away from where the bad bytes actually came from.
+    pub fn from_scores(tick: i64, scores: &[f32; 4]) -> Result<Self, String> {
+        let snapshot = Self {
             tick,
             dopamine: scores[0],
             cortisol: scores[1],
             acetylcholine: scores[2],
             tempo: scores[3],
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
+    }
+
+    /// Check the documented ranges for each field.
+    ///
+    /// Fields are public for direct Rust construction, so a value built via
+    /// struct literal is not guaranteed to satisfy the documented ranges
+    /// (`dopamine`, `cortisol`, `acetylcholine` in `[0, 1]`; `tempo` in
+    /// `[0.5, 2.0]`) or even to be finite. Deserialization (this type is
+    /// reachable via [`IpcMessage::Neuromodulators`]) already enforces this
+    /// check via a `TryFrom` shadow type; call this explicitly only after
+    /// constructing one directly in Rust.
+    pub fn validate(&self) -> Result<(), String> {
+        for (name, value, min, max) in [
+            ("dopamine", self.dopamine, 0.0, 1.0),
+            ("cortisol", self.cortisol, 0.0, 1.0),
+            ("acetylcholine", self.acetylcholine, 0.0, 1.0),
+            ("tempo", self.tempo, 0.5, 2.0),
+        ] {
+            if !value.is_finite() {
+                return Err(format!(
+                    "NeuromodulatorSnapshot: {name} is not finite: {value}"
+                ));
+            }
+            if value < min || value > max {
+                return Err(format!(
+                    "NeuromodulatorSnapshot: {name} ({value}) out of documented range [{min}, {max}]"
+                ));
+            }
         }
+        Ok(())
     }
 }
 
 /// Core message enum for cross-process IPC.
 ///
 /// Messages are separated into:
-/// - Input messages (spikes, embeddings, config)
+/// - Input messages (spikes, embeddings, stimuli, neuromodulators, config)
 /// - Output messages (gradients, traces, training status)
 /// - Control messages (shutdown, ping)
 ///
@@ -87,6 +158,13 @@ pub enum IpcMessage {
     /// Wire envelope for an IPC [`SpikeBatch`] (not a SynapticDistill training batch).
     Spikes(SpikeBatch),
     Embeddings(EmbeddingBatch),
+    /// Typed continuous runtime stimulus ingress (e.g. `thalamic-relay` ->
+    /// `brainstem-daemon`). See [`StimulusBatch`] for channel-width and
+    /// invalid/missing-channel semantics.
+    Stimuli(StimulusBatch),
+    /// Typed neuromodulator ingress, replacing an unstructured float tail.
+    /// See [`NeuromodulatorSnapshot`] and [`NeuromodulatorSnapshot::validate`].
+    Neuromodulators(NeuromodulatorSnapshot),
     Loss(f32),
     ConfigUpdate(ConfigPayload),
 
@@ -99,6 +177,112 @@ pub enum IpcMessage {
     // Control
     Shutdown,
     Ping,
+}
+
+/// Canonical wire batch of continuous, domain-neutral runtime stimulus values.
+///
+/// This is the typed replacement for downstream services' ad-hoc stimulus
+/// payloads — e.g. `thalamic-relay`'s untagged `{"type":"Stimuli","values":[...]}`
+/// UDP JSON, and `brainstem-daemon`'s local `IngressPacket { stimuli, modulators }`
+/// struct. `corpus-ipc` owns this schema; downstream services should decode/encode
+/// through [`IpcMessage::Stimuli`] instead of a private struct or raw
+/// `serde_json::Value` field indexing.
+///
+/// # Channel width
+///
+/// `values.len()` is the channel count. It is **not fixed** by this crate —
+/// do not encode any particular network's input width (e.g. Spikenaut's
+/// current axon count) into this type. Consumers determine width at runtime
+/// from the batch itself.
+///
+/// # Invalid / missing channel semantics
+///
+/// `valid_mask`, when `Some`, must be the same length as `values`.
+/// `valid_mask[i] == false` means channel `i` has no valid reading this tick;
+/// the corresponding `values[i]` is a placeholder (`0.0` by convention) and
+/// must **not** be interpreted as a real zero-valued reading. When
+/// `valid_mask` is `None`, every entry in `values` is valid.
+///
+/// This is a deliberate improvement over ad-hoc formats (e.g. `thalamic-relay`'s
+/// UDP handler) that silently coerce missing or non-numeric channels to `0.0`
+/// with no way to distinguish "sensor read zero" from "no data this tick."
+///
+/// Fields are public (matching this crate's other wire batches, e.g.
+/// [`SpikeBatch`]) for direct Rust construction, but **deserialization
+/// enforces the `valid_mask`-length invariant**: a JSON/wire payload with a
+/// `valid_mask` whose length differs from `values.len()` fails to
+/// deserialize (via [`StimulusBatch::validate`] through a `TryFrom` shadow
+/// type), rather than silently producing an inconsistent instance. Call
+/// [`StimulusBatch::validate`] explicitly after constructing one directly in
+/// Rust (which bypasses deserialization) to get the same check.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[serde(try_from = "StimulusBatchWire")]
+pub struct StimulusBatch {
+    /// Optional session ID for concurrent experiment isolation.
+    pub session_id: Option<String>,
+    /// Unique batch identifier for correlation.
+    pub batch_id: u64,
+    /// Timestamp in nanoseconds (UTC or relative).
+    pub timestamp: u64,
+    /// Continuous stimulus values. Length is the channel count; not fixed by this crate.
+    pub values: Vec<f32>,
+    /// Optional per-channel validity mask, same length as `values` when present.
+    /// `false` marks a channel as invalid/missing for this tick (see type docs).
+    pub valid_mask: Option<Vec<bool>>,
+    /// Optional batch-level metadata.
+    pub metadata: Option<BatchMetadata>,
+}
+
+impl StimulusBatch {
+    /// Check the `valid_mask`-length invariant documented on this type.
+    ///
+    /// Returns `Err` describing the mismatch when `valid_mask` is `Some` and
+    /// its length differs from `values.len()`. Returns `Ok(())` when
+    /// `valid_mask` is `None` or already matches.
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(mask) = &self.valid_mask
+            && mask.len() != self.values.len()
+        {
+            return Err(format!(
+                "StimulusBatch: valid_mask length ({}) must match values length ({})",
+                mask.len(),
+                self.values.len()
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Deserialization-only shadow of [`StimulusBatch`] with the identical wire
+/// shape. `StimulusBatch`'s real `Deserialize` impl (below) goes through
+/// this type and [`StimulusBatch::validate`] so a malformed `valid_mask`
+/// length is rejected at deserialization instead of producing an
+/// inconsistent instance.
+#[derive(Deserialize)]
+struct StimulusBatchWire {
+    session_id: Option<String>,
+    batch_id: u64,
+    timestamp: u64,
+    values: Vec<f32>,
+    valid_mask: Option<Vec<bool>>,
+    metadata: Option<BatchMetadata>,
+}
+
+impl TryFrom<StimulusBatchWire> for StimulusBatch {
+    type Error = String;
+
+    fn try_from(wire: StimulusBatchWire) -> Result<Self, Self::Error> {
+        let batch = StimulusBatch {
+            session_id: wire.session_id,
+            batch_id: wire.batch_id,
+            timestamp: wire.timestamp,
+            values: wire.values,
+            valid_mask: wire.valid_mask,
+            metadata: wire.metadata,
+        };
+        batch.validate()?;
+        Ok(batch)
+    }
 }
 
 /// IPC transport batch of spike events from compute processing.
@@ -303,6 +487,105 @@ mod tests {
         }
     }
 
+    fn sample_stimulus_batch() -> StimulusBatch {
+        StimulusBatch {
+            session_id: Some("sess-1".into()),
+            batch_id: 7,
+            timestamp: 1_700_000_000,
+            values: vec![0.5, 0.0, -0.25],
+            valid_mask: Some(vec![true, false, true]),
+            metadata: None,
+        }
+    }
+
+    fn sample_neuromodulator_snapshot() -> NeuromodulatorSnapshot {
+        NeuromodulatorSnapshot {
+            tick: 42,
+            dopamine: 0.4,
+            cortisol: 0.3,
+            acetylcholine: 0.2,
+            tempo: 1.0,
+        }
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_validate_accepts_in_range_values() {
+        assert!(sample_neuromodulator_snapshot().validate().is_ok());
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_from_scores_accepts_in_range_values() {
+        let snap = NeuromodulatorSnapshot::from_scores(1, &[0.4, 0.3, 0.2, 1.0])
+            .expect("in-range scores must construct");
+        assert_eq!(snap.tick, 1);
+        assert!((snap.dopamine - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_from_scores_rejects_out_of_range_value() {
+        // tempo (scores[3]) outside documented [0.5, 2.0]
+        let err = NeuromodulatorSnapshot::from_scores(1, &[0.4, 0.3, 0.2, 3.0])
+            .expect_err("out-of-range tempo byte must fail construction, not just deserialization");
+        assert!(err.contains("tempo"), "error should name the field: {err}");
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_validate_rejects_out_of_range_value() {
+        let mut snap = sample_neuromodulator_snapshot();
+        snap.tempo = 3.0; // outside documented [0.5, 2.0]
+        let err = snap
+            .validate()
+            .expect_err("out-of-range tempo must fail validation");
+        assert!(err.contains("tempo"), "error should name the field: {err}");
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_validate_rejects_non_finite_value() {
+        let mut snap = sample_neuromodulator_snapshot();
+        snap.dopamine = f32::NAN;
+        let err = snap
+            .validate()
+            .expect_err("non-finite dopamine must fail validation");
+        assert!(
+            err.contains("dopamine"),
+            "error should name the field: {err}"
+        );
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_deserialize_rejects_out_of_range_value() {
+        let json = serde_json::json!({
+            "tick": 1,
+            "dopamine": 0.5,
+            "cortisol": 0.5,
+            "acetylcholine": 0.5,
+            "tempo": 3.0
+        });
+        let result: Result<NeuromodulatorSnapshot, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "an out-of-range tempo must fail to deserialize"
+        );
+    }
+
+    #[test]
+    fn neuromodulator_snapshot_try_from_wire_rejects_non_finite_value() {
+        // JSON has no NaN/Infinity literal, so this exercises the TryFrom
+        // conversion that backs Deserialize directly, for wire formats
+        // (e.g. bincode) that can represent a non-finite f32.
+        let wire = NeuromodulatorSnapshotWire {
+            tick: 1,
+            dopamine: f32::NAN,
+            cortisol: 0.5,
+            acetylcholine: 0.5,
+            tempo: 1.0,
+        };
+        assert!(
+            NeuromodulatorSnapshot::try_from(wire).is_err(),
+            "a non-finite dopamine must fail the TryFrom conversion"
+        );
+    }
+
     fn sample_trace_batch() -> TraceBatch {
         TraceBatch {
             session_id: "sess-1".into(),
@@ -376,6 +659,116 @@ mod tests {
         assert_eq!(
             decoded_traces,
             IpcMessage::EligibilityTraces(sample_trace_batch())
+        );
+    }
+
+    #[test]
+    fn stimulus_batch_json_keys_stay_stable() {
+        let json = serde_json::to_value(sample_stimulus_batch()).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "session_id": "sess-1",
+                "batch_id": 7,
+                "timestamp": 1_700_000_000,
+                "values": [0.5, 0.0, -0.25],
+                "valid_mask": [true, false, true],
+                "metadata": null
+            })
+        );
+    }
+
+    #[test]
+    fn stimulus_batch_round_trips() {
+        let batch = sample_stimulus_batch();
+        let json = serde_json::to_value(&batch).unwrap();
+        let decoded: StimulusBatch = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, batch);
+    }
+
+    #[test]
+    fn stimulus_batch_default_has_no_mask_and_all_channels_valid() {
+        let batch = StimulusBatch::default();
+        assert!(batch.values.is_empty());
+        assert!(batch.valid_mask.is_none());
+    }
+
+    #[test]
+    fn stimulus_batch_validate_accepts_matching_or_absent_mask() {
+        assert!(StimulusBatch::default().validate().is_ok());
+        assert!(sample_stimulus_batch().validate().is_ok());
+    }
+
+    #[test]
+    fn stimulus_batch_validate_rejects_mismatched_mask_length() {
+        let batch = StimulusBatch {
+            values: vec![0.0, 0.0, 0.0],
+            valid_mask: Some(vec![true, false]),
+            ..Default::default()
+        };
+        let err = batch
+            .validate()
+            .expect_err("mismatched mask must fail validation");
+        assert!(
+            err.contains('3'),
+            "error should mention values length: {err}"
+        );
+        assert!(err.contains('2'), "error should mention mask length: {err}");
+    }
+
+    #[test]
+    fn stimulus_batch_deserialize_rejects_mismatched_mask_length() {
+        let json = serde_json::json!({
+            "session_id": null,
+            "batch_id": 1,
+            "timestamp": 0,
+            "values": [0.0, 1.0],
+            "valid_mask": [true],
+            "metadata": null
+        });
+        let result: Result<StimulusBatch, _> = serde_json::from_value(json);
+        assert!(
+            result.is_err(),
+            "a valid_mask shorter than values must fail to deserialize"
+        );
+    }
+
+    #[test]
+    fn stimulus_batch_invalid_channel_is_distinct_from_a_real_zero() {
+        // Channel 1 is a genuine zero reading; channel 2 is missing/invalid and
+        // its 0.0 placeholder must not be mistaken for a real reading.
+        let batch = StimulusBatch {
+            session_id: None,
+            batch_id: 1,
+            timestamp: 0,
+            values: vec![1.0, 0.0, 0.0],
+            valid_mask: Some(vec![true, true, false]),
+            metadata: None,
+        };
+        let json = serde_json::to_value(&batch).unwrap();
+        let decoded: StimulusBatch = serde_json::from_value(json).unwrap();
+        let mask = decoded.valid_mask.expect("mask must survive round-trip");
+        assert!(mask[1], "channel 1 is a valid, genuine zero reading");
+        assert!(!mask[2], "channel 2 is invalid/missing, not a real zero");
+    }
+
+    #[test]
+    fn ipc_message_stimuli_and_neuromodulators_keep_variant_names() {
+        let stimuli = serde_json::to_value(IpcMessage::Stimuli(sample_stimulus_batch())).unwrap();
+        let neuromods =
+            serde_json::to_value(IpcMessage::Neuromodulators(sample_neuromodulator_snapshot()))
+                .unwrap();
+        assert!(stimuli.get("Stimuli").is_some());
+        assert!(neuromods.get("Neuromodulators").is_some());
+        let decoded_stimuli: IpcMessage = serde_json::from_value(stimuli).unwrap();
+        let decoded_neuromods: IpcMessage = serde_json::from_value(neuromods).unwrap();
+        assert_eq!(
+            decoded_stimuli,
+            IpcMessage::Stimuli(sample_stimulus_batch())
+        );
+        assert_eq!(
+            decoded_neuromods,
+            IpcMessage::Neuromodulators(sample_neuromodulator_snapshot())
         );
     }
 }

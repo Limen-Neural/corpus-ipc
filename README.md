@@ -15,11 +15,12 @@ Inter-Process Communication (IPC) library for bridging Rust to external compute 
   - `IpcMessage`
   - `SpikeBatch`, `SpikeEvent` (IPC wire types; alias `IpcSpikeBatch`)
   - `EmbeddingBatch`
+  - `StimulusBatch` for typed, variable-width runtime stimulus ingress
   - `GradientBatch`, `GradientUpdate`
   - `TraceBatch`, `TraceData` (IPC wire types; alias `IpcTraceBatch`)
   - `ConfigPayload`, `ConfigValue`, `BatchMetadata`
 - `HybridFlowBackend` trait for message-oriented hybrid transports
-- `NeuromodulatorSnapshot` for parsed runtime readout payloads
+- `NeuromodulatorSnapshot` for typed neuromodulator ingress/readout payloads
 
 ## Installation
 
@@ -74,6 +75,25 @@ remain compatible. When the collision would be confusing, use the aliases
 `IpcSpikeBatch` and `IpcTraceBatch` — they are the same types and the same
 wire format.
 
+### Stimulus and neuromodulator ingress
+
+`corpus-ipc` is the schema owner for the stimulus/neuromodulator leg of the
+sensory pipeline. The intended flow is:
+
+```text
+thalamic-relay -> corpus-ipc -> brainstem-daemon
+ sensory/safety    wire/schema      SNN runtime
+```
+
+`thalamic-relay` and `brainstem-daemon` encode/decode through
+`IpcMessage::Stimuli(StimulusBatch)` and
+`IpcMessage::Neuromodulators(NeuromodulatorSnapshot)` instead of bespoke UDP
+JSON or a private packet struct. `StimulusBatch` is domain-neutral: its
+`values` width is not fixed by this crate (do not encode any one network's
+axon/channel count here), and an optional `valid_mask` lets a channel be
+marked invalid/missing for a tick instead of silently reading as `0.0`. See
+the `StimulusBatch` doc comments for the exact semantics.
+
 ## Crate Exports
 
 - Backends and traits:
@@ -85,7 +105,7 @@ wire format.
 - Models:
   - `IpcMessage` and all batch/config/trace/gradient payload structs
   - `IpcSpikeBatch` / `IpcTraceBatch` aliases for the IPC wire batches
-  - `NeuromodulatorSnapshot`
+  - `StimulusBatch`, `NeuromodulatorSnapshot`
 
 ## License
 

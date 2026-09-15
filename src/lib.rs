@@ -25,7 +25,7 @@ pub use error::BackendError;
 pub use models::{
     BatchMetadata, ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate,
     IpcMessage, IpcSpikeBatch, IpcTraceBatch, NeuromodulatorSnapshot, SpikeBatch, SpikeEvent,
-    TraceBatch, TraceData,
+    StimulusBatch, TraceBatch, TraceData,
 };
 /// Re-export the core trait, factory, and backend.
 pub use rust_backend::RustBackend;
