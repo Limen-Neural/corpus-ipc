@@ -19,4 +19,5 @@ comment:
 ignore:
   - "benches/**"
   - "examples/**"
+  - "src/bin/**"
   - "target/**"
