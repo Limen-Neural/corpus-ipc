@@ -41,7 +41,7 @@ pub struct SpikeBatch {
 
 #[derive(Deserialize)]
 struct SpikeBatchWire {
-    #[serde(deserialize_with = "de_opt_session_id")]
+    #[serde(default, deserialize_with = "de_opt_session_id")]
     session_id: Option<String>,
     batch_id: u64,
     timestamp: u64,

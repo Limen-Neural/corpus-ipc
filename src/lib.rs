@@ -4,12 +4,15 @@
 //!
 //! Inter-Process Communication (IPC) library for bridging Rust to external compute engines.
 //!
+//! Repository: <https://github.com/Limen-Neural/corpus-ipc>
+//!
 //! Provides a unified interface for various backends:
 //!
 //! - [`IpcBackend`] — required backend contract (deprecated alias: `RuntimeBackend`)
 //! - [`RustBackend`] — pure-Rust native backend (no external deps, always available)
 //! - `ZmqIpcBackend` — IPC backend via ZMQ SUB socket (feature `zmq`;
-//!   deprecated alias: `ZmqRuntimeBackend`)
+//!   deprecated alias: `ZmqRuntimeBackend`). `Send` + `Sync` via mutex-serialized
+//!   socket ownership; the raw `zmq::Socket` is never `Sync`.
 //!
 //! ## Feature flags
 //!
@@ -25,7 +28,16 @@
 //!
 //! Combine `server` and `zmq` when the REST service should select the ZMQ
 //! backend via `CORPUS_IPC_BACKEND_TYPE=zmq`.
+//!
+//! ## Wire compatibility
+//!
+//! [`WireCompatibility`] is the source of truth for on-wire schema versions
+//! (independent of crate semver). Decode hybrid-flow JSON through
+//! [`decode_ipc_message_json`] so too-old and too-new envelopes fail closed
+//! before the payload is used. See [`compatibility`] for the encoding rules
+//! (unknown fields ignored; unknown [`IpcMessage`] variants never default).
 
+pub mod compatibility;
 pub mod error;
 pub mod models;
 pub mod rust_backend;
@@ -35,6 +47,12 @@ pub mod validation;
 #[cfg(feature = "zmq")]
 pub mod zmq_backend;
 
+/// Re-export the wire-schema compatibility envelope.
+pub use compatibility::{
+    Compatibility, CompatibilityError, EnvelopeError, SupportedWireVersion, WireCompatibility,
+    WireEnvelope, accept_wire_version, classify_wire_version, decode_ipc_message_json,
+    decode_ipc_message_value, encode_ipc_message_json,
+};
 /// Re-export the main error type.
 pub use error::BackendError;
 /// Re-export all public data models used on the wire.

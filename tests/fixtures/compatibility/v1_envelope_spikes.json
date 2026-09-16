@@ -1,0 +1,18 @@
+{
+  "wire_version": 1,
+  "payload": {
+    "Spikes": {
+      "session_id": "sess-1",
+      "batch_id": 7,
+      "timestamp": 1700000000,
+      "spikes": [
+        {
+          "channel": 3,
+          "time": 11,
+          "strength": 0.5
+        }
+      ],
+      "metadata": null
+    }
+  }
+}

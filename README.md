@@ -2,6 +2,9 @@
 
 # corpus-ipc
 
+[![CI](https://github.com/Limen-Neural/corpus-ipc/actions/workflows/ci.yml/badge.svg)](https://github.com/Limen-Neural/corpus-ipc/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 Inter-Process Communication (IPC) library for bridging Rust to external compute engines.
 
 `corpus-ipc` is the schema and transport layer for cross-process compute workflows. It provides backend abstractions for local/native execution and optional ZeroMQ IPC, plus canonical wire message models used across services.
@@ -22,6 +25,7 @@ Inter-Process Communication (IPC) library for bridging Rust to external compute 
   - `ConfigPayload`, `ConfigValue`, `BatchMetadata`
 - `HybridFlowBackend` trait for message-oriented hybrid transports
 - `NeuromodulatorSnapshot` for typed neuromodulator ingress/readout payloads
+- `WireCompatibility` envelope (`decode_ipc_message_json`) for fail-closed schema versions
 
 ## Feature flags
 
@@ -32,14 +36,27 @@ link those stacks.
 | Feature | Default | What it enables |
 | --- | --- | --- |
 | *(none)* | yes | Wire models (`IpcMessage`, batches, snapshots) and `RustBackend` |
-| `zmq` | no | `ZmqIpcBackend` (vendored libzmq via `zmq-sys`; needs a C++ compiler) |
+| `zmq` | no | `ZmqIpcBackend` (vendored libzmq via `zmq-sys`; needs a C++ compiler). `Send` + `Sync` via mutex-serialized SUB socket ownership; libzmq sockets themselves are `Send` + `!Sync`. |
 | `server` | no | `corpus_ipc_server` Axum REST binary (`axum` + minimized `tokio`) |
 
 `tower` is not a direct crate dependency. Axum 0.7 depends on it unconditionally,
 so it appears only when the optional `server` feature enables Axum. `serde_json`
-is a **dev-dependency** for serialization-contract tests in `models/`; the
-server binary uses Axum's `Json` extractor (the `json` feature), which depends
-on `serde_json` internally.
+is a library dependency so the compatibility envelope can inspect `wire_version`
+before deserializing a payload. The server binary uses Axum's `Json` extractor
+(the `json` feature), which also depends on `serde_json`.
+
+### ZMQ backend concurrency
+
+`ZmqIpcBackend` is `Send` + `Sync` because `IpcBackend` requires both. libzmq
+sockets are **not** safe to share (`zmq(7)` *Thread safety*; `zmq` 0.10's
+`Socket` is `Send` + `!Sync`). This crate does not `unsafe impl Sync` on the
+socket. The SUB socket is created, subscribed, and connected on the
+initializing thread (`initialize` takes `&mut self`) before it is stored in a
+`Mutex`. Non-blocking receive and `reset`'s close path take that lock; dropping
+the backend closes the socket through exclusive ownership of the struct.
+Moving the backend to another thread is supported. `process_batch` still takes
+`&mut self`; concurrent process calls need an outer lock, which is how
+`corpus_ipc_server` uses `Arc<Mutex<Box<dyn IpcBackend>>>`.
 
 ## Installation
 
@@ -123,19 +140,57 @@ axon/channel count here), and an optional `valid_mask` lets a channel be
 marked invalid/missing for a tick instead of silently reading as `0.0`. See
 the `StimulusBatch` doc comments for the exact semantics.
 
+### Wire compatibility envelope
+
+Crate semver does not define on-wire acceptance. `WireCompatibility` is the
+source of truth for the current and minimum supported **wire** versions
+(currently both `1`). Decode hybrid-flow JSON through
+`decode_ipc_message_json` so too-old and too-new envelopes return typed
+errors before the payload is used. Unversioned tagged `IpcMessage` JSON
+(the encoding shipped in 0.1.0), including JSON-string unit variants such as
+`"Ping"`, is still accepted as legacy wire version 1.
+
+Current encoding rules:
+
+- **Unknown fields** on structs and on the envelope object are ignored, so
+  additive optional fields can be skipped by older readers.
+- **Unknown `IpcMessage` variants** fail to deserialize. They never become a
+  valid default (`IpcMessage` has no `Default` and no serde `other` catch-all).
+
+Bump `WireCompatibility::CURRENT` when the on-wire schema changes in a way
+existing decoders cannot ignore. See `CHANGELOG.md` for the full bump rules,
+including when to raise `MIN_SUPPORTED`. The compiled example lives on
+`decode_ipc_message_json`.
+
 ## Crate Exports
 
 - Backends and traits:
   - `IpcBackend`, `HybridFlowBackend`
   - `BackendType` (`Rust`, `ZmqIpc`; deprecated `ZmqRuntime` still selects ZMQ)
   - `RustBackend`
-  - `ZmqIpcBackend` (when `zmq` feature enabled)
+  - `ZmqIpcBackend` (when `zmq` feature enabled; mutex-serialized socket ownership)
   - Deprecated compatibility aliases: `RuntimeBackend`, `ZmqRuntimeBackend`
 - Models:
   - `IpcMessage` and all batch/config/trace/gradient payload structs
   - `IpcSpikeBatch` / `IpcTraceBatch` aliases for the IPC wire batches
   - `StimulusBatch`, `NeuromodulatorSnapshot`
   - `ValidationError`, `ValidationKind`, `ProtocolLimits`, `Validate`
+- Wire compatibility:
+  - `WireCompatibility`, `classify_wire_version`, `accept_wire_version`
+  - `WireEnvelope`, `decode_ipc_message_json`, `encode_ipc_message_json`
+  - `Compatibility`, `CompatibilityError`, `EnvelopeError`
+
+## Repository
+
+Canonical GitHub home: **[Limen-Neural/corpus-ipc](https://github.com/Limen-Neural/corpus-ipc)**.
+`rmems/corpus-ipc` redirects here.
+
+The [GitHub wiki](https://github.com/Limen-Neural/corpus-ipc/wiki) is **enabled**
+and is the extra-docs home (architecture, backends, REST server, ecosystem).
+In-tree [`docs/`](docs/) is a pointer only — not a second documentation site.
+
+Links to [`SynapticDistill.jl`](https://github.com/rmems/SynapticDistill.jl)
+stay on `rmems`; that sibling has not transferred.
 
 ## License
 

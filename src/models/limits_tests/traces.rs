@@ -93,6 +93,6 @@ fn trace_batch_round_trips() {
     };
     let json = serde_json::to_value(&traces).unwrap();
     let decoded: TraceBatch = serde_json::from_value(json).unwrap();
-    assert_eq!(decoded.traces[0].channel_id, 4);
+    assert_eq!(decoded, traces);
     IpcMessage::EligibilityTraces(decoded).validate().unwrap();
 }

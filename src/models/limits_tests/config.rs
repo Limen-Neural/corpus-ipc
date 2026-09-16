@@ -61,11 +61,23 @@ fn config_payload_round_trips() {
     payload.validate().unwrap();
     let json = serde_json::to_value(&payload).unwrap();
     let decoded: ConfigPayload = serde_json::from_value(json).unwrap();
-    assert!(matches!(
+    assert_eq!(
+        decoded.config.get("mode"),
+        Some(&ConfigValue::String("fast".into()))
+    );
+    assert_eq!(
+        decoded.config.get("n"),
+        Some(&ConfigValue::Float(7.0))
+    );
+    assert_eq!(
         decoded.config.get("on"),
-        Some(ConfigValue::Boolean(true))
-    ));
-    IpcMessage::ConfigUpdate(payload).validate().unwrap();
+        Some(&ConfigValue::Boolean(true))
+    );
+    assert_eq!(
+        decoded.config.get("arr"),
+        Some(&ConfigValue::FloatArray(vec![1.0, 2.0]))
+    );
+    IpcMessage::ConfigUpdate(decoded).validate().unwrap();
     ConfigValue::Integer(3).validate().unwrap();
     ConfigValue::Boolean(false).validate().unwrap();
 }

@@ -5,15 +5,28 @@ use super::*;
 #[test]
 fn neuromodulator_rejects_non_finite() {
     for value in non_finite_values() {
-        let mut snap = NeuromodulatorSnapshot {
-            tick: 0,
-            dopamine: 0.1,
-            cortisol: 0.1,
-            acetylcholine: 0.1,
-            tempo: 1.0,
-        };
-        snap.dopamine = value;
-        assert_eq!(snap.validate().unwrap_err().kind, ValidationKind::NonFinite);
+        for i in 0..4 {
+            let mut snap = NeuromodulatorSnapshot {
+                tick: 0,
+                dopamine: 0.1,
+                cortisol: 0.1,
+                acetylcholine: 0.1,
+                tempo: 1.0,
+            };
+            match i {
+                0 => snap.dopamine = value,
+                1 => snap.cortisol = value,
+                2 => snap.acetylcholine = value,
+                3 => snap.tempo = value,
+                _ => unreachable!(),
+            }
+            assert_eq!(snap.validate().unwrap_err().kind, ValidationKind::NonFinite);
+        }
+
+        assert!(NeuromodulatorSnapshot::from_scores(0, &[value, 0.1, 0.1, 1.0]).is_err());
+        assert!(NeuromodulatorSnapshot::from_scores(0, &[0.1, value, 0.1, 1.0]).is_err());
+        assert!(NeuromodulatorSnapshot::from_scores(0, &[0.1, 0.1, value, 1.0]).is_err());
+        assert!(NeuromodulatorSnapshot::from_scores(0, &[0.1, 0.1, 0.1, value]).is_err());
     }
 }
 

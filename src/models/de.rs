@@ -70,7 +70,19 @@ pub(super) fn de_eligibility_trace<'de, D: Deserializer<'de>>(
 }
 
 pub(super) fn de_float_array<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<f32>, D::Error> {
-    bounded_vec(d, ProtocolLimits::DEFAULT.max_channel_values, "config")
+    bounded_vec(d, ProtocolLimits::DEFAULT.max_channel_values, "config").and_then(
+        |values: Vec<f32>| {
+            for (index, value) in values.iter().enumerate() {
+                if !value.is_finite() {
+                    return Err(serde::de::Error::custom(ValidationError::non_finite(
+                        format!("config[{index}]"),
+                        *value,
+                    )));
+                }
+            }
+            Ok(values)
+        },
+    )
 }
 
 pub(super) fn de_config_string<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
