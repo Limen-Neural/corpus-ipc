@@ -11,7 +11,8 @@
 //! - [`IpcBackend`] — required backend contract (deprecated alias: `RuntimeBackend`)
 //! - [`RustBackend`] — pure-Rust native backend (no external deps, always available)
 //! - `ZmqIpcBackend` — IPC backend via ZMQ SUB socket (feature `zmq`;
-//!   deprecated alias: `ZmqRuntimeBackend`)
+//!   deprecated alias: `ZmqRuntimeBackend`). `Send` + `Sync` via mutex-serialized
+//!   socket ownership; the raw `zmq::Socket` is never `Sync`.
 //!
 //! ## Feature flags
 //!
