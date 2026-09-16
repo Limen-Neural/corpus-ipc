@@ -1,0 +1,19 @@
+src/models/limits_tests/traces.rs
+  d6bd355bd1ca4fe9 96
+src/models/limits_tests/config.rs
+  d6bd355bd1ca4fe9 64-72,74-80
+src/models/limits_tests/non_finite.rs
+  d6bd355bd1ca4fe9 9-29
+src/models/de.rs
+  d6bd355bd1ca4fe9 73
+README.md
+  d6bd355bd1ca4fe9 44
+src/models/spikes.rs
+  d6bd355bd1ca4fe9 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bf7d69dfa9acd558f330a25967b2d35936b316ca",
+  "prompts": {}
+}
