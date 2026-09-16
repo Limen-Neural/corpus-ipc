@@ -1,0 +1,9 @@
+CHANGELOG.md
+  c255b9c195ab5c18 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e81bce23a2e859cc659b93877adf236d796ce2b0",
+  "prompts": {}
+}
