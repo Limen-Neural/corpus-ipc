@@ -174,6 +174,7 @@ including when to raise `MIN_SUPPORTED`. The compiled example lives on
   - `IpcMessage` and all batch/config/trace/gradient payload structs
   - `IpcSpikeBatch` / `IpcTraceBatch` aliases for the IPC wire batches
   - `StimulusBatch`, `NeuromodulatorSnapshot`
+  - `ValidationError`, `ValidationKind`, `ProtocolLimits`, `Validate`
 - Wire compatibility:
   - `WireCompatibility`, `classify_wire_version`, `accept_wire_version`
   - `WireEnvelope`, `decode_ipc_message_json`, `encode_ipc_message_json`

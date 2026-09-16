@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Typed `ValidationError` / `ValidationKind` and `ProtocolLimits` for wire
+  payload validation (LIM-1231). `validate()` is implemented for every public
+  batch and message payload; deserialization reuses the same checks and
+  rejects oversize collections as early as serde permits.
 - Wire-schema compatibility envelope (RM-1333): `WireCompatibility` is the
   public source of truth for current (`1`) and minimum supported (`1`) wire
   versions. `decode_ipc_message_json` classifies incoming envelopes as
@@ -21,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `validate()` now returns `Result<(), ValidationError>` instead
+  of `Result<(), String>`. Deserialization of public wire payloads enforces
+  `ProtocolLimits::DEFAULT`, so previously accepted oversize or non-finite
+  payloads are rejected.
 - Point live crate metadata and docs at `Limen-Neural/corpus-ipc` after the
   ownership transfer (`rmems/corpus-ipc` redirects here). Document that the
   GitHub wiki is enabled. (RM-309, #24)
