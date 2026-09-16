@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Point live crate metadata and docs at `Limen-Neural/corpus-ipc` after the
+  ownership transfer (`rmems/corpus-ipc` redirects here). Document that the
+  GitHub wiki is enabled. (RM-309, #24)
 - `serde_json` is a library dependency again (feature `raw_value`) so the
   envelope decoder can inspect `wire_version` before deserializing a payload.
   This reverses the 0.1.0 move of `serde_json` to a test-only (dev)
