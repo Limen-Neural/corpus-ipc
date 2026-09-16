@@ -67,6 +67,10 @@ pub use IpcBackend as RuntimeBackend;
 /// Backends that support structured spike/embedding exchange can implement this
 /// trait in addition to `IpcBackend`. It is optional; most simple
 /// backends only need `IpcBackend`.
+///
+/// This trait does not own the wire encoding. Implementors that speak JSON
+/// should decode inbound bytes with [`crate::decode_ipc_message_json`] so
+/// schema versions are classified before a payload is used.
 pub trait HybridFlowBackend: Send + Sync {
     /// Send a spike batch over the transport.
     fn send_spikes(&mut self, spikes: SpikeBatch) -> Result<(), BackendError>;
