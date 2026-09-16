@@ -11,7 +11,7 @@ use super::de::{de_session_id, de_trace_value, de_traces, prefix_path};
 
 /// IPC transport batch of eligibility traces for credit assignment.
 ///
-/// This is a **wire-level** payload for [`IpcMessage::EligibilityTraces`].
+/// This is a **wire-level** payload for [`IpcMessage::EligibilityTraces`](crate::IpcMessage::EligibilityTraces).
 /// Field names and layout are part of the serialized protocol.
 ///
 /// **Not** [`SynapticDistill.jl`](https://github.com/rmems/SynapticDistill.jl)'s

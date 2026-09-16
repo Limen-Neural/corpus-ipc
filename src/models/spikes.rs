@@ -13,7 +13,7 @@ use super::de::{
 
 /// IPC transport batch of spike events from compute processing.
 ///
-/// This is a **wire-level** payload for [`IpcMessage::Spikes`]. Field names
+/// This is a **wire-level** payload for [`IpcMessage::Spikes`](crate::IpcMessage::Spikes). Field names
 /// and layout are part of the serialized protocol and must not be changed
 /// casually.
 ///

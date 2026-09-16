@@ -15,7 +15,7 @@ pub enum ValidationKind {
     OutOfRange,
     /// Two related sequences (for example `values` and `valid_mask`) differed in length.
     LengthMismatch,
-    /// A collection length or string byte length exceeded [`ProtocolLimits`].
+    /// A collection length or string byte length exceeded [`ProtocolLimits`](crate::ProtocolLimits).
     LimitExceeded,
     /// Nested metadata violated policy (empty key, or a nested object rejected
     /// by the typed map).

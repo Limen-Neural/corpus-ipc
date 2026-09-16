@@ -14,13 +14,20 @@ documentation = "https://docs.rs/corpus-ipc"
 readme = "README.md"
 keywords = ["ipc", "zmq", "ffi", "hpc", "compute"]
 categories = ["science", "network-programming", "api-bindings"]
-# crates.io surface: licenses, README, CHANGELOG, sources. Drop agent/CI/docs trees.
-exclude = [
-    "/docs/",
-    "/.github/",
-    "/AGENTS.md",
-    "/CLAUDE.md",
-    "/.codacy.yml",
+# crates.io surface: explicit allow-list. Only consumer-relevant material
+# ships: library/server sources, README, CHANGELOG, licenses. (Cargo always
+# includes the manifest itself, plus Cargo.lock because this package builds a
+# binary target, and generates .cargo_vcs_info.json / Cargo.toml.orig.)
+# Repo-only material (agent files, CI config, coverage/lint config, docs
+# pointer tree, local tooling, governance) is excluded by omission.
+# Integration tests and fixtures stay out of the registry artifact; `cargo
+# package` / `cargo publish` verify the packaged sources by building them.
+include = [
+    "/src/**/*.rs",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE-MIT",
+    "/LICENSE-APACHE-2.0",
 ]
 
 [dependencies]
