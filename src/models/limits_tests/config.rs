@@ -65,14 +65,8 @@ fn config_payload_round_trips() {
         decoded.config.get("mode"),
         Some(&ConfigValue::String("fast".into()))
     );
-    assert_eq!(
-        decoded.config.get("n"),
-        Some(&ConfigValue::Float(7.0))
-    );
-    assert_eq!(
-        decoded.config.get("on"),
-        Some(&ConfigValue::Boolean(true))
-    );
+    assert_eq!(decoded.config.get("n"), Some(&ConfigValue::Float(7.0)));
+    assert_eq!(decoded.config.get("on"), Some(&ConfigValue::Boolean(true)));
     assert_eq!(
         decoded.config.get("arr"),
         Some(&ConfigValue::FloatArray(vec![1.0, 2.0]))
