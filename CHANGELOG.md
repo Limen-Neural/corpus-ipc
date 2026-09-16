@@ -58,7 +58,8 @@ the accepted range.
 - only the Rust API, docs, or crate semver change
 - adding an *optional* field that older readers can ignore under the
   unknown-field rule
-- adding a new `IpcMessage` variant that old readers will reject (that is
+- adding a new `IpcMessage` variant that old readers will reject with
+  `EnvelopeError::Payload` rather than `CompatibilityError::TooNew` (this is
   a crate API addition; old readers already fail closed on unknown
   variants — bump `CURRENT` if new producers must be distinguished from
   old ones at the envelope layer)

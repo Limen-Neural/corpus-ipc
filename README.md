@@ -134,7 +134,8 @@ source of truth for the current and minimum supported **wire** versions
 (currently both `1`). Decode hybrid-flow JSON through
 `decode_ipc_message_json` so too-old and too-new envelopes return typed
 errors before the payload is used. Unversioned tagged `IpcMessage` JSON
-(the encoding shipped in 0.1.0) is still accepted as legacy wire version 1.
+(the encoding shipped in 0.1.0), including JSON-string unit variants such as
+`"Ping"`, is still accepted as legacy wire version 1.
 
 Current encoding rules:
 

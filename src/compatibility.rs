@@ -306,7 +306,7 @@ pub fn encode_ipc_message_json(message: &IpcMessage) -> Result<Vec<u8>, Envelope
 /// ```
 pub fn decode_ipc_message_json(bytes: &[u8]) -> Result<IpcMessage, EnvelopeError> {
     match parse_raw_envelope(bytes) {
-        Ok(raw) if raw.wire_version.is_some() => {
+        Ok(raw) if matches!(raw.wire_version, OptionalValue::Present(_)) => {
             Ok(envelope_from_raw_parts::<IpcMessage>(raw)?.into_payload())
         }
         Ok(_) => {
@@ -351,11 +351,28 @@ pub fn decode_ipc_message_value(value: Value) -> Result<IpcMessage, EnvelopeErro
     }
 }
 
+/// Distinguishes a missing `wire_version` field from an explicit JSON `null`.
+#[derive(Default)]
+enum OptionalValue {
+    #[default]
+    Absent,
+    Present(Value),
+}
+
+impl<'de> Deserialize<'de> for OptionalValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Self::Present(Value::deserialize(deserializer)?))
+    }
+}
+
 /// Envelope JSON with the payload left unparsed until the version is accepted.
 #[derive(Deserialize)]
 struct RawEnvelope {
     #[serde(default)]
-    wire_version: Option<Value>,
+    wire_version: OptionalValue,
     #[serde(default)]
     payload: OptionalRaw,
 }
@@ -380,7 +397,9 @@ impl<'de> Deserialize<'de> for OptionalRaw {
 fn envelope_from_raw_parts<T: DeserializeOwned>(
     raw: RawEnvelope,
 ) -> Result<WireEnvelope<T>, EnvelopeError> {
-    let version_val = raw.wire_version.ok_or(EnvelopeError::MissingVersion)?;
+    let OptionalValue::Present(version_val) = raw.wire_version else {
+        return Err(EnvelopeError::MissingVersion);
+    };
     let version = parse_wire_version(&version_val)?;
     WireCompatibility::accept(version)?;
     let OptionalRaw::Present(payload_raw) = raw.payload else {

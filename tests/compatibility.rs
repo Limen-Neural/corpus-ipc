@@ -368,3 +368,26 @@ fn compatibility_null_payload_deserializes_when_t_accepts_null() {
         "IpcMessage must not treat null payload as missing: {err}"
     );
 }
+
+#[test]
+fn compatibility_null_wire_version_is_invalid_version() {
+    let bytes = br#"{"wire_version":null,"payload":"Ping"}"#;
+    let err = decode_ipc_message_json(bytes).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeError::InvalidVersion(ref s) if s == "null"),
+        "null wire_version from bytes should be InvalidVersion(\"null\"), got {err:?}"
+    );
+
+    let val: Value = serde_json::from_slice(bytes).unwrap();
+    let err = decode_ipc_message_value(val).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeError::InvalidVersion(ref s) if s == "null"),
+        "null wire_version from Value should be InvalidVersion(\"null\"), got {err:?}"
+    );
+
+    let err = WireEnvelope::<IpcMessage>::decode_json(bytes).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeError::InvalidVersion(ref s) if s == "null"),
+        "null wire_version in WireEnvelope should be InvalidVersion(\"null\"), got {err:?}"
+    );
+}
