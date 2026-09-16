@@ -82,3 +82,47 @@ jobs:
       - name: Test all features
         if: runner.os == 'Linux'
         run: cargo test --all-features
+
+  release-qualification:
+    name: Release qualification (public artifact)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.98.1
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: "1.98.1"
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry and git
+        uses: actions/cache@2f8e54208210a422b2efd51efaa6bd6d7ca8920f # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      # Cargo.lock is tracked for this repo, so every command asserts --locked.
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy (all features)
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+      - name: Test all features
+        run: cargo test --all-features --locked
+
+      - name: Docs (deny warnings)
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --locked
+
+      - name: Package list
+        run: cargo package --list --locked
+
+      - name: Package
+        run: cargo package --locked
+
+      - name: Publish dry-run (no credentials)
+        run: cargo publish --dry-run --locked

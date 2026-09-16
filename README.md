@@ -62,10 +62,17 @@ Moving the backend to another thread is supported. `process_batch` still takes
 
 ```toml
 [dependencies]
-corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc" }
+corpus-ipc = "0.1"
 
 # Optional ZMQ backend support
-# corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc", features = ["zmq"] }
+# corpus-ipc = { version = "0.1", features = ["zmq"] }
+```
+
+Development / unreleased-main option (tracks `main`, not a registry release):
+
+```toml
+[dependencies]
+corpus-ipc = { git = "https://github.com/Limen-Neural/corpus-ipc" }
 ```
 
 Run the REST service from this repo (not pulled in by a library dependency):
@@ -147,7 +154,7 @@ source of truth for the current and minimum supported **wire** versions
 (currently both `1`). Decode hybrid-flow JSON through
 `decode_ipc_message_json` so too-old and too-new envelopes return typed
 errors before the payload is used. Unversioned tagged `IpcMessage` JSON
-(the encoding shipped in 0.1.0), including JSON-string unit variants such as
+(the pre-release git encoding), including JSON-string unit variants such as
 `"Ping"`, is still accepted as legacy wire version 1.
 
 Current encoding rules:

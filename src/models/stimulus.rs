@@ -15,7 +15,7 @@ use super::de::{de_opt_session_id, de_valid_mask, de_values, validate_optional_m
 /// payloads — e.g. `thalamic-relay`'s untagged `{"type":"Stimuli","values":[...]}`
 /// UDP JSON, and `brainstem-daemon`'s local `IngressPacket { stimuli, modulators }`
 /// struct. `corpus-ipc` owns this schema; downstream services should decode/encode
-/// through [`IpcMessage::Stimuli`] instead of a private struct or raw
+/// through [`IpcMessage::Stimuli`](crate::IpcMessage::Stimuli) instead of a private struct or raw
 /// `serde_json::Value` field indexing.
 ///
 /// # Channel width
@@ -38,7 +38,7 @@ use super::de::{de_opt_session_id, de_valid_mask, de_values, validate_optional_m
 /// with no way to distinguish "sensor read zero" from "no data this tick."
 ///
 /// Fields are public (matching this crate's other wire batches, e.g.
-/// [`SpikeBatch`]) for direct Rust construction, but **deserialization
+/// [`SpikeBatch`](crate::SpikeBatch)) for direct Rust construction, but **deserialization
 /// enforces the `valid_mask`-length invariant**: a JSON/wire payload with a
 /// `valid_mask` whose length differs from `values.len()` fails to
 /// deserialize (via [`StimulusBatch::validate`] through a `TryFrom` shadow
