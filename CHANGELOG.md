@@ -11,14 +11,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- GitHub Actions Codecov workflow (`cargo llvm-cov` LCOV upload with org
-  `CODECOV_TOKEN`, slug `Limen-Neural/corpus-ipc`) (#34, RM-1203).
+- Wire-schema compatibility envelope (RM-1333): `WireCompatibility` is the
+  public source of truth for current (`1`) and minimum supported (`1`) wire
+  versions. `decode_ipc_message_json` classifies incoming envelopes as
+  supported, too old, or too new and returns typed errors **before** the
+  payload is used. Unversioned 0.1.0 `IpcMessage` JSON remains accepted as
+  legacy wire version 1. Unknown struct fields are ignored (forward
+  compatible); unknown `IpcMessage` variants never deserialize as a default.
 
 ### Changed
 
 - Point live crate metadata and docs at `Limen-Neural/corpus-ipc` after the
   ownership transfer (`rmems/corpus-ipc` redirects here). Document that the
   GitHub wiki is enabled. (RM-309, #24)
+- `serde_json` is a library dependency again (feature `raw_value`) so the
+  envelope decoder can inspect `wire_version` before deserializing a payload.
+  This reverses the 0.1.0 move of `serde_json` to a test-only (dev)
+  dependency.
+- GitHub Actions Codecov workflow (`cargo llvm-cov` LCOV upload with org
+  `CODECOV_TOKEN`, slug `Limen-Neural/corpus-ipc`) (#34, RM-1203).
+
+### Wire version bumps
+
+Crate semver and wire version are independent. Change
+`WireCompatibility::CURRENT` / `MIN_SUPPORTED` (in `src/compatibility.rs`)
+when the **on-wire** schema changes, not merely because the crate version
+changed.
+
+**Bump `CURRENT` (and treat it as a breaking wire change) when:**
+
+- renaming, removing, or changing the type of a serialized field
+- renaming, removing, or adding an `IpcMessage` variant that existing
+  decoders must understand
+- adding a required field with no default the older encoding can omit
+- tightening unknown-field policy (for example `deny_unknown_fields`)
+- changing tagged-enum identity (`Spikes`, `Ping`, …) or envelope keys
+  (`wire_version`, `payload`)
+
+If the new schema cannot still decode the previous payload, also raise
+`MIN_SUPPORTED` to that new version (or keep a version-specific decoder
+for the old one). Bumping only `CURRENT` leaves older versions inside
+the accepted range.
+
+**Do not bump `CURRENT` when:**
+
+- only the Rust API, docs, or crate semver change
+- adding an *optional* field that older readers can ignore under the
+  unknown-field rule
+- adding a new `IpcMessage` variant that old readers will reject with
+  `EnvelopeError::Payload` rather than `CompatibilityError::TooNew` (this is
+  a crate API addition; old readers already fail closed on unknown
+  variants — bump `CURRENT` if new producers must be distinguished from
+  old ones at the envelope layer)
+
+**Raise `MIN_SUPPORTED` when this crate drops decode of an older wire
+version.** Keep at least one committed fixture for every still-supported
+version, including the unversioned-as-v1 encoding while
+`LEGACY_UNVERSIONED` remains inside the window.
 
 ## [0.1.0]
 
