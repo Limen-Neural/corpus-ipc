@@ -3,6 +3,11 @@
 # corpus-ipc
 
 [![CI](https://github.com/Limen-Neural/corpus-ipc/actions/workflows/ci.yml/badge.svg)](https://github.com/Limen-Neural/corpus-ipc/actions/workflows/ci.yml)
+[![Codecov](https://codecov.io/gh/Limen-Neural/corpus-ipc/branch/main/graph/badge.svg)](https://codecov.io/gh/Limen-Neural/corpus-ipc)
+[![Crates.io](https://img.shields.io/crates/v/corpus-ipc.svg)](https://crates.io/crates/corpus-ipc)
+[![docs.rs](https://docs.rs/corpus-ipc/badge.svg)](https://docs.rs/corpus-ipc)
+[![Codacy code quality](https://img.shields.io/badge/code_quality-Codacy-2A5DB0?logo=codacy)](https://app.codacy.com/gh/Limen-Neural/corpus-ipc/dashboard)
+[![Qlty maintainability](https://img.shields.io/badge/maintainability-Qlty-6C47FF)](https://qlty.sh/gh/Limen-Neural/projects/corpus-ipc)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 Inter-Process Communication (IPC) library for bridging Rust to external compute engines.
