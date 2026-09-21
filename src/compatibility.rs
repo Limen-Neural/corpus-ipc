@@ -325,9 +325,14 @@ pub enum CanonicalEncodeError {
 ///    order at every nesting level, independent of `HashMap` insertion order
 ///    or per-process hash seed. The same message therefore encodes to
 ///    identical bytes across runs and processes. Determinism is achieved by
-///    routing through [`serde_json::Value`] (whose map is a sorted
-///    `BTreeMap`); the public [`crate::ConfigPayload`] / [`crate::BatchMetadata`]
-///    field types stay `HashMap`.
+///    routing through [`serde_json::Value`] and calling
+///    [`serde_json::Value::sort_all_objects`], which recursively sorts every
+///    nested object. This does not rely on the default `BTreeMap` backing:
+///    if a consumer's dependency graph enables serde_json's `preserve_order`
+///    feature (unified across the graph by Cargo), `Value` uses an
+///    insertion-ordered `IndexMap` and the explicit sort still applies. The
+///    public [`crate::ConfigPayload`] / [`crate::BatchMetadata`] field types
+///    stay `HashMap`.
 /// 3. **Wire version 1.** The payload is wrapped in [`WireEnvelope::new`], so
 ///    `wire_version` is [`WireCompatibility::CURRENT`].
 ///
@@ -345,9 +350,15 @@ pub fn encode_canonical_ipc_message(message: &IpcMessage) -> Result<Vec<u8>, Can
     message.validate()?;
     // 2. Reuse the envelope so wire_version == CURRENT (1).
     let envelope = WireEnvelope::new(message);
-    // 3. Route through Value so every nested object's keys sort (BTreeMap),
-    //    making the bytes independent of HashMap iteration order.
-    let value = serde_json::to_value(&envelope).map_err(CanonicalEncodeError::Json)?;
+    // 3. Route through Value and sort every nested object's keys. Without
+    //    serde_json's `preserve_order` feature, `Value`'s map is already a
+    //    sorted `BTreeMap` and `sort_all_objects` is a no-op; with it (which a
+    //    consumer's dependency graph can enable via Cargo feature
+    //    unification), `Value` becomes an insertion-ordered `IndexMap`, so the
+    //    explicit recursive sort is what keeps the bytes independent of
+    //    `HashMap` iteration order and the wider feature set.
+    let mut value = serde_json::to_value(&envelope).map_err(CanonicalEncodeError::Json)?;
+    value.sort_all_objects();
     serde_json::to_vec(&value).map_err(CanonicalEncodeError::Json)
 }
 

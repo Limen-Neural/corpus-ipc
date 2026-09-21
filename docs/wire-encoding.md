@@ -15,8 +15,10 @@ fixture generation and for downstream corpora (RM-1330, LIM-1331).
 Every canonical message is a wire-version-1 envelope:
 
 ```json
-{"wire_version":1,"payload":<payload>}
+{"payload":<payload>,"wire_version":1}
 ```
+
+(Keys are sorted, so `payload` precedes `wire_version` in the canonical form.)
 
 - `wire_version` is always `1` (`WireCompatibility::CURRENT`).
 - `payload` is an externally tagged `IpcMessage`:
@@ -52,8 +54,11 @@ only the representable domain reaches the wire:
   `ConfigValue::Float(f32)`. Consequently:
   - `ConfigValue::Integer(42)` round-trips through the wire as
     `ConfigValue::Float(42.0)`.
-  - Integer magnitudes above `2^24` lose precision in `f32`. Consumers that
-    need exact large-integer identity must not rely on `ConfigValue`.
+  - `f32` represents every integer up to `2^24` exactly; above `2^24`,
+    integers can lose precision or identity on an `f32` round-trip (not every
+    larger integer does, but some do — e.g. `16_777_217` is not representable).
+    Consumers that need exact large-integer identity must not rely on
+    `ConfigValue`.
 
   This Float-first behavior is intentional and unchanged; the canonical
   encoder does **not** redesign the numeric schema.

@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `WireEnvelope` model and `Validate` policy. Non-finite floats are rejected
   before serialization with a typed error instead of a silent JSON `null`.
   `ConfigValue` stays Float-first: `Integer(42)` round-trips as `Float(42.0)`
-  and integers above `2^24` lose precision (documented, not redesigned).
+  and integers above `2^24` can lose precision or identity on an `f32`
+  round-trip (documented, not redesigned).
 
 ## [0.1.0]
 

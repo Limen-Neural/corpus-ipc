@@ -139,8 +139,9 @@ fn canonical_integer_normalizes_to_float_and_documents_precision_loss() {
         panic!("expected ConfigUpdate");
     }
 
-    // Integers above 2^24 lose precision in f32 (documented; not exact).
-    let big = (1u64 << 24) + 1; // 16_777_217, not representable exactly as f32
+    // 16_777_217 = 2^24 + 1 is the smallest integer f32 cannot represent
+    // exactly, so it loses identity on an f32 round-trip (documented).
+    let big = (1u64 << 24) + 1;
     let mut config = HashMap::new();
     config.insert("big".to_string(), ConfigValue::Integer(big));
     let bytes = encode_canonical_ipc_message(&config_message(config)).unwrap();
