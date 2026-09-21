@@ -15,11 +15,12 @@ readme = "README.md"
 keywords = ["ipc", "zmq", "ffi", "hpc", "compute"]
 categories = ["science", "network-programming", "api-bindings"]
 # crates.io surface: explicit allow-list. Only consumer-relevant material
-# ships: library/server sources, README, CHANGELOG, licenses. (Cargo always
-# includes the manifest itself, plus Cargo.lock because this package builds a
+# ships: library/server sources, README, CHANGELOG, licenses, and the
+# normative wire-encoding spec linked from README. (Cargo always includes
+# the manifest itself, plus Cargo.lock because this package builds a
 # binary target, and generates .cargo_vcs_info.json / Cargo.toml.orig.)
-# Repo-only material (agent files, CI config, coverage/lint config, docs
-# pointer tree, local tooling, governance) is excluded by omission.
+# Repo-only material (agent files, CI config, coverage/lint config, the
+# rest of docs/, local tooling, governance) is excluded by omission.
 # Integration tests and fixtures stay out of the registry artifact; `cargo
 # package` / `cargo publish` verify the packaged sources by building them.
 include = [
@@ -28,6 +29,7 @@ include = [
     "/CHANGELOG.md",
     "/LICENSE-MIT",
     "/LICENSE-APACHE-2.0",
+    "/docs/wire-encoding.md",
 ]
 
 [dependencies]
@@ -46,6 +48,10 @@ tokio = { version = "1", optional = true, default-features = false, features = [
 [features]
 default = []
 zmq = ["dep:zmq"]
+# Not a consumer feature. CI enables it to prove `encode_canonical_ipc_message`
+# is independent of serde_json `arbitrary_precision` Cargo feature unification.
+# Do not enable in application manifests.
+_ci_serde_json_arbitrary_precision = ["serde_json/arbitrary_precision"]
 # HTTP service stack for `corpus_ipc_server` only. `tower` is a mandatory
 # dependency of optional `axum`, not a direct crate dep. Axum's `json` feature
 # also pulls `serde_json` for the binary; the library already depends on it for
