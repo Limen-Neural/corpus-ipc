@@ -33,8 +33,13 @@ before the payload is used.
 1. **Sorted keys, all levels.** Object member names are emitted in byte-wise
    ascending order at every nesting depth. This holds even though
    `ConfigPayload.config` and `BatchMetadata.custom` are `HashMap` in Rust:
-   the encoder routes through `serde_json::Value` (a sorted `BTreeMap`), so
-   insertion order and per-process hash seed do not affect the bytes.
+   the encoder routes through `serde_json::Value` and calls
+   `Value::sort_all_objects()` to recursively sort every nested object before
+   serializing, so insertion order and per-process hash seed do not affect the
+   bytes. The sort does not depend on serde_json's default `BTreeMap` backing —
+   it stays correct even if a consumer's dependency graph enables the
+   `preserve_order` feature (which switches `Value` to an insertion-ordered
+   `IndexMap`).
 2. **Compact.** No insignificant whitespace.
 3. **UTF-8.** Output is UTF-8; non-ASCII keys and values are preserved.
 4. **Determinism.** The same message encodes to identical bytes across runs
