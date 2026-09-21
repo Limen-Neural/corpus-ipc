@@ -15,6 +15,18 @@ fn duplicate_config_keys_are_rejected() {
 }
 
 #[test]
+fn config_json_decimals_deserialize_as_float() {
+    let raw = r#"{"session_id":null,"config":{"a":1.0,"b":0.1,"arr":[1.0,2.0]}}"#;
+    let payload = serde_json::from_str::<ConfigPayload>(raw).expect("JSON decimals must decode");
+    assert_eq!(payload.config.get("a"), Some(&ConfigValue::Float(1.0)));
+    assert_eq!(payload.config.get("b"), Some(&ConfigValue::Float(0.1)));
+    assert_eq!(
+        payload.config.get("arr"),
+        Some(&ConfigValue::FloatArray(vec![1.0, 2.0]))
+    );
+}
+
+#[test]
 fn config_map_accepts_exact_max_and_rejects_overflow() {
     let mut payload = ConfigPayload {
         session_id: None,

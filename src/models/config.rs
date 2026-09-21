@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::fmt;
+
+use serde::de::{
+    self, Deserializer, IntoDeserializer, MapAccess, SeqAccess, Visitor,
+    value::{MapAccessDeserializer, SeqAccessDeserializer},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::validation::{
@@ -74,43 +80,104 @@ fn validate_config_entries(
 
 /// Configuration value types.
 ///
-/// Uses `#[serde(untagged)]` so plain JSON numbers/strings/arrays/booleans
-/// work directly inside `ConfigPayload::config`.
+/// Serialize uses `#[serde(untagged)]` so plain JSON numbers/strings/arrays/booleans
+/// are emitted inside `ConfigPayload::config`.
 ///
-/// **Untagged deserialization behavior (intentional, pre-existing):**
-/// `Float(f32)` is first, so JSON numbers (e.g. `42` or `1.5`) always
-/// deserialize as `Float`. `Integer` is only reached for values that were
-/// originally `ConfigValue::Integer` in Rust and then serialized, or under
-/// certain deserializer configurations.
+/// **JSON number behavior (intentional, pre-existing):**
+/// JSON numbers (e.g. `42` or `1.5`) always deserialize as `Float`. `Integer`
+/// is only reached for values that were originally `ConfigValue::Integer` in
+/// Rust (in-memory), not from JSON. Deserialize is a `deserialize_any`
+/// visitor rather than `#[serde(untagged)]` so JSON decimals still decode
+/// when a consumer unifies serde_json `arbitrary_precision` (that feature
+/// presents non-integer numbers to `deserialize_any` as a private Number
+/// map, which untagged + `deserialize_with = f32` does not accept).
 ///
 /// Round-tripping `Integer(42)` through JSON yields `Float(42.0)`.
 /// Large integers (> ~2^24) may lose precision in f32.
 /// Consumers relying on exact integer identity should be aware.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum ConfigValue {
     /// Floating-point value.
     ///
-    /// Because this is the first variant in an untagged enum, JSON
-    /// numbers (integers and floats) deserialize as `Float`.
-    Float(#[serde(deserialize_with = "de_finite_f32")] f32),
+    /// JSON numbers (integers and floats) deserialize as `Float`.
+    Float(f32),
 
     /// Integer value (u64).
     ///
     /// Typically only produced when a Rust `ConfigValue::Integer` is
-    /// serialized and round-tripped with the same serde configuration,
-    /// or in specific deserializer contexts. Plain JSON numbers land
-    /// in `Float` due to declaration order.
+    /// constructed in memory. Plain JSON numbers land in `Float`.
     Integer(u64),
 
     /// String value.
     ///
     /// Allows string-valued config (e.g. mode names, paths) in `ConfigPayload::config`.
-    String(#[serde(deserialize_with = "de_config_string")] String),
+    String(String),
 
     /// Boolean value.
     Boolean(bool),
-    FloatArray(#[serde(deserialize_with = "de_float_array")] Vec<f32>),
+    FloatArray(Vec<f32>),
+}
+
+impl<'de> Deserialize<'de> for ConfigValue {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ConfigValueVisitor;
+
+        impl<'de> Visitor<'de> for ConfigValueVisitor {
+            type Value = ConfigValue;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a JSON number, string, boolean, or array of finite floats")
+            }
+
+            fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
+                Ok(ConfigValue::Boolean(value))
+            }
+
+            fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+                de_finite_f32(value.into_deserializer()).map(ConfigValue::Float)
+            }
+
+            fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+                de_finite_f32(value.into_deserializer()).map(ConfigValue::Float)
+            }
+
+            fn visit_f32<E: de::Error>(self, value: f32) -> Result<Self::Value, E> {
+                de_finite_f32(value.into_deserializer()).map(ConfigValue::Float)
+            }
+
+            fn visit_f64<E: de::Error>(self, value: f64) -> Result<Self::Value, E> {
+                de_finite_f32(value.into_deserializer()).map(ConfigValue::Float)
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                de_config_string(value.into_deserializer()).map(ConfigValue::String)
+            }
+
+            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+                de_config_string(value.into_deserializer()).map(ConfigValue::String)
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+                de_float_array(SeqAccessDeserializer::new(seq)).map(ConfigValue::FloatArray)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+                // serde_json `arbitrary_precision` presents JSON floats to
+                // `deserialize_any` as a map keyed by `$serde_json::private::Number`.
+                let number = serde_json::Number::deserialize(MapAccessDeserializer::new(map))?;
+                let Some(as_f64) = number.as_f64() else {
+                    return Err(de::Error::custom(ValidationError::non_finite(
+                        "value",
+                        f32::NAN,
+                    )));
+                };
+                de_finite_f32(as_f64.into_deserializer()).map(ConfigValue::Float)
+            }
+        }
+
+        deserializer.deserialize_any(ConfigValueVisitor)
+    }
 }
 
 impl Validate for ConfigValue {

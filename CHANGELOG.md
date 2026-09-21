@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   round-trip (documented, not redesigned). Canonical `f32` bytes use `f64`
   promotion so they stay stable under serde_json `arbitrary_precision`
   unification. The crates.io package includes `docs/wire-encoding.md`.
+  `ConfigValue` JSON decimals (`1.0`, `0.1`) still decode as `Float` when
+  serde_json `arbitrary_precision` is unified.
 
 ## [0.1.0]
 
