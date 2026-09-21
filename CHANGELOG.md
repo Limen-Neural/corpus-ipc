@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before serialization with a typed error instead of a silent JSON `null`.
   `ConfigValue` stays Float-first: `Integer(42)` round-trips as `Float(42.0)`
   and integers above `2^24` can lose precision or identity on an `f32`
-  round-trip (documented, not redesigned).
+  round-trip (documented, not redesigned). Canonical `f32` bytes use `f64`
+  promotion so they stay stable under serde_json `arbitrary_precision`
+  unification. The crates.io package includes `docs/wire-encoding.md`.
 
 ## [0.1.0]
 

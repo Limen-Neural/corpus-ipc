@@ -42,7 +42,14 @@ before the payload is used.
    `IndexMap`).
 2. **Compact.** No insignificant whitespace.
 3. **UTF-8.** Output is UTF-8; non-ASCII keys and values are preserved.
-4. **Determinism.** The same message encodes to identical bytes across runs
+4. **`f32` as widened `f64`.** Finite `f32` values are converted with
+   `f64::from` before JSON number formatting. That matches default serde_json
+   `Number` (no `arbitrary_precision`) and keeps bytes identical if a
+   consumer's dependency graph enables serde_json `arbitrary_precision`
+   (which would otherwise emit shortest-`f32` decimals such as `0.1` instead
+   of `0.10000000149011612` for `0.1_f32`). Integers still encode as JSON
+   integers (`42`, not `42.0`).
+5. **Determinism.** The same message encodes to identical bytes across runs
    and processes.
 
 ## Representable / normalized domain
@@ -70,6 +77,19 @@ only the representable domain reaches the wire:
 
 ## Regenerating fixtures
 
-Committed compatibility fixtures are produced from this one encoder. Do not
-hand-edit fixture bytes; regenerate them from `encode_canonical_ipc_message`
-so there is a single source of truth for the on-wire form.
+Current-version **canonical** fixtures (wire-v1 envelopes of known
+`IpcMessage` variants) are produced from `encode_canonical_ipc_message`. Do
+not hand-edit those bytes; regenerate them from that encoder so there is a
+single source of truth for the on-wire form.
+
+Legacy and unsupported-version vectors under
+`tests/fixtures/compatibility/` must **not** be regenerated through the
+canonical encoder. `encode_canonical_ipc_message` always emits a current
+version envelope around a known variant, so running it on those files would
+drop coverage:
+
+- `legacy_unversioned_*.json` — pre-envelope tagged JSON
+- `v0_too_old_*.json` — envelopes below `MIN_SUPPORTED`
+- `v2_too_new_*.json` — envelopes above `CURRENT` (including unknown variants)
+
+Keep those as hand-maintained negative / compatibility vectors.
