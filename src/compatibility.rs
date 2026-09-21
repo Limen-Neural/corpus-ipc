@@ -45,6 +45,7 @@ use serde_json::Value;
 use serde_json::value::RawValue;
 
 use crate::IpcMessage;
+use crate::validation::{Validate, ValidationError};
 
 /// Canonical wire-schema compatibility window for this crate.
 ///
@@ -286,6 +287,68 @@ where
 /// Encode `message` as a current-version compatibility envelope.
 pub fn encode_ipc_message_json(message: &IpcMessage) -> Result<Vec<u8>, EnvelopeError> {
     WireEnvelope::new(message).encode_json()
+}
+
+/// Fail-closed errors from [`encode_canonical_ipc_message`].
+///
+/// This is a **dedicated** encode error, deliberately separate from
+/// [`EnvelopeError`]: its match arms are part of a different contract and must
+/// not be folded into the decode error. Canonical encoding fails before any
+/// bytes are produced, either because the payload did not pass
+/// [`Validate::validate`] (for example a non-finite `f32`, which JSON would
+/// otherwise emit as a silent `null`) or because serialization itself failed.
+#[derive(Debug, thiserror::Error)]
+pub enum CanonicalEncodeError {
+    /// The payload failed [`Validate::validate`] before serialization.
+    ///
+    /// Non-finite floats (`NaN`, `±inf`) are reported here as
+    /// [`ValidationKind::NonFinite`](crate::ValidationKind::NonFinite) rather
+    /// than serialized as `null`.
+    #[error("payload failed validation before canonical encoding: {0}")]
+    Validation(#[from] ValidationError),
+    /// Serialization of the validated envelope failed.
+    #[error("canonical JSON serialization error: {0}")]
+    Json(serde_json::Error),
+}
+
+/// Encode `message` as **canonical** wire-version-1 envelope bytes.
+///
+/// This is the single canonical encoder for the project wire profile
+/// (see `docs/wire-encoding.md`). It is *not* RFC 8785 / JCS; it is this
+/// crate's own profile. Guarantees:
+///
+/// 1. **Validated first.** [`Validate::validate`] runs before serialization,
+///    so a directly constructed non-finite `f32` is rejected with a typed
+///    [`CanonicalEncodeError::Validation`] instead of being emitted as JSON
+///    `null`.
+/// 2. **Deterministic bytes.** Object keys are emitted in sorted (byte-wise)
+///    order at every nesting level, independent of `HashMap` insertion order
+///    or per-process hash seed. The same message therefore encodes to
+///    identical bytes across runs and processes. Determinism is achieved by
+///    routing through [`serde_json::Value`] (whose map is a sorted
+///    `BTreeMap`); the public [`crate::ConfigPayload`] / [`crate::BatchMetadata`]
+///    field types stay `HashMap`.
+/// 3. **Wire version 1.** The payload is wrapped in [`WireEnvelope::new`], so
+///    `wire_version` is [`WireCompatibility::CURRENT`].
+///
+/// Bytes produced here decode through [`decode_ipc_message_json`].
+///
+/// ```
+/// use corpus_ipc::{decode_ipc_message_json, encode_canonical_ipc_message, IpcMessage};
+///
+/// let bytes = encode_canonical_ipc_message(&IpcMessage::Ping).unwrap();
+/// assert_eq!(decode_ipc_message_json(&bytes).unwrap(), IpcMessage::Ping);
+/// ```
+pub fn encode_canonical_ipc_message(message: &IpcMessage) -> Result<Vec<u8>, CanonicalEncodeError> {
+    // 1. Reuse validation as the single pre-serialization gate. This rejects
+    //    non-finite floats before any bytes exist (no silent null).
+    message.validate()?;
+    // 2. Reuse the envelope so wire_version == CURRENT (1).
+    let envelope = WireEnvelope::new(message);
+    // 3. Route through Value so every nested object's keys sort (BTreeMap),
+    //    making the bytes independent of HashMap iteration order.
+    let value = serde_json::to_value(&envelope).map_err(CanonicalEncodeError::Json)?;
+    serde_json::to_vec(&value).map_err(CanonicalEncodeError::Json)
 }
 
 /// Decode an [`IpcMessage`] from JSON, accepting either an envelope or legacy

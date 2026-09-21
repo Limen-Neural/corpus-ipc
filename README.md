@@ -174,6 +174,12 @@ existing decoders cannot ignore. See `CHANGELOG.md` for the full bump rules,
 including when to raise `MIN_SUPPORTED`. The compiled example lives on
 `decode_ipc_message_json`.
 
+The canonical wire-v1 encoding (sorted keys at every level, finite-float
+domain, deterministic bytes) is specified in
+[`docs/wire-encoding.md`](docs/wire-encoding.md) and produced by
+`encode_canonical_ipc_message`. It is the project wire profile, not RFC 8785 /
+JCS.
+
 ## Crate Exports
 
 - Backends and traits:

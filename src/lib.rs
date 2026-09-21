@@ -49,9 +49,10 @@ pub mod zmq_backend;
 
 /// Re-export the wire-schema compatibility envelope.
 pub use compatibility::{
-    Compatibility, CompatibilityError, EnvelopeError, SupportedWireVersion, WireCompatibility,
-    WireEnvelope, accept_wire_version, classify_wire_version, decode_ipc_message_json,
-    decode_ipc_message_value, encode_ipc_message_json,
+    CanonicalEncodeError, Compatibility, CompatibilityError, EnvelopeError, SupportedWireVersion,
+    WireCompatibility, WireEnvelope, accept_wire_version, classify_wire_version,
+    decode_ipc_message_json, decode_ipc_message_value, encode_canonical_ipc_message,
+    encode_ipc_message_json,
 };
 /// Re-export the main error type.
 pub use error::BackendError;
