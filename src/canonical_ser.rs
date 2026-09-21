@@ -278,3 +278,169 @@ impl<S: SerializeStructVariant> SerializeStructVariant for F32AsF64<S> {
         self.0.end()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Serialize;
+    use serde_json::json;
+
+    fn widen<T: Serialize + ?Sized>(value: &T) -> serde_json::Value {
+        serialize_f32_as_f64(value, serde_json::value::Serializer).unwrap()
+    }
+
+    /// Calls every `Serializer` / compound-type method on `F32AsF64` so the
+    /// forwarding adapter stays covered (canonical messages only hit a subset).
+    enum Drive {
+        Bool,
+        I8,
+        I16,
+        I32,
+        I64,
+        I128,
+        U8,
+        U16,
+        U32,
+        U64,
+        U128,
+        F32,
+        F64,
+        Char,
+        Str,
+        Bytes,
+        None,
+        SomeF32,
+        Unit,
+        UnitStruct,
+        UnitVariant,
+        NewtypeStruct,
+        NewtypeVariant,
+        Seq,
+        Tuple,
+        TupleStruct,
+        TupleVariant,
+        MapEntry,
+        MapKeyValue,
+        StructSkip,
+        StructVariant,
+        HumanReadable,
+    }
+
+    impl Serialize for Drive {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            match self {
+                Self::Bool => serializer.serialize_bool(true),
+                Self::I8 => serializer.serialize_i8(-1),
+                Self::I16 => serializer.serialize_i16(-2),
+                Self::I32 => serializer.serialize_i32(-3),
+                Self::I64 => serializer.serialize_i64(-4),
+                Self::I128 => serializer.serialize_i128(-5),
+                Self::U8 => serializer.serialize_u8(1),
+                Self::U16 => serializer.serialize_u16(2),
+                Self::U32 => serializer.serialize_u32(3),
+                Self::U64 => serializer.serialize_u64(4),
+                Self::U128 => serializer.serialize_u128(5),
+                Self::F32 => serializer.serialize_f32(0.1),
+                Self::F64 => serializer.serialize_f64(1.5),
+                Self::Char => serializer.serialize_char('z'),
+                Self::Str => serializer.serialize_str("s"),
+                Self::Bytes => serializer.serialize_bytes(&[1, 2]),
+                Self::None => serializer.serialize_none(),
+                Self::SomeF32 => serializer.serialize_some(&0.1_f32),
+                Self::Unit => serializer.serialize_unit(),
+                Self::UnitStruct => serializer.serialize_unit_struct("U"),
+                Self::UnitVariant => serializer.serialize_unit_variant("E", 0, "Uv"),
+                Self::NewtypeStruct => serializer.serialize_newtype_struct("N", &0.1_f32),
+                Self::NewtypeVariant => {
+                    serializer.serialize_newtype_variant("E", 1, "Nv", &0.1_f32)
+                }
+                Self::Seq => {
+                    let mut seq = serializer.serialize_seq(Some(2))?;
+                    seq.serialize_element(&0.1_f32)?;
+                    seq.serialize_element(&1_u8)?;
+                    seq.end()
+                }
+                Self::Tuple => {
+                    let mut tup = serializer.serialize_tuple(2)?;
+                    tup.serialize_element(&0.1_f32)?;
+                    tup.serialize_element(&true)?;
+                    tup.end()
+                }
+                Self::TupleStruct => {
+                    let mut tup = serializer.serialize_tuple_struct("Ts", 1)?;
+                    tup.serialize_field(&0.1_f32)?;
+                    tup.end()
+                }
+                Self::TupleVariant => {
+                    let mut tup = serializer.serialize_tuple_variant("E", 2, "Tv", 1)?;
+                    tup.serialize_field(&0.1_f32)?;
+                    tup.end()
+                }
+                Self::MapEntry => {
+                    let mut map = serializer.serialize_map(Some(1))?;
+                    map.serialize_entry("k", &0.1_f32)?;
+                    map.end()
+                }
+                Self::MapKeyValue => {
+                    let mut map = serializer.serialize_map(Some(1))?;
+                    map.serialize_key("k")?;
+                    map.serialize_value(&0.1_f32)?;
+                    map.end()
+                }
+                Self::StructSkip => {
+                    let mut st = serializer.serialize_struct("S", 2)?;
+                    st.serialize_field("a", &1_u8)?;
+                    st.skip_field("b")?;
+                    st.end()
+                }
+                Self::StructVariant => {
+                    let mut st = serializer.serialize_struct_variant("E", 3, "Sv", 2)?;
+                    st.serialize_field("a", &0.1_f32)?;
+                    st.skip_field("b")?;
+                    st.end()
+                }
+                Self::HumanReadable => {
+                    let human = serializer.is_human_readable();
+                    serializer.serialize_bool(human)
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn f32_as_f64_adapter_forwards_every_serializer_method() {
+        let promoted = json!(0.10000000149011612);
+        assert_eq!(widen(&Drive::Bool), json!(true));
+        assert_eq!(widen(&Drive::I8), json!(-1));
+        assert_eq!(widen(&Drive::I16), json!(-2));
+        assert_eq!(widen(&Drive::I32), json!(-3));
+        assert_eq!(widen(&Drive::I64), json!(-4));
+        assert_eq!(widen(&Drive::I128), json!(-5));
+        assert_eq!(widen(&Drive::U8), json!(1));
+        assert_eq!(widen(&Drive::U16), json!(2));
+        assert_eq!(widen(&Drive::U32), json!(3));
+        assert_eq!(widen(&Drive::U64), json!(4));
+        assert_eq!(widen(&Drive::U128), json!(5));
+        assert_eq!(widen(&Drive::F32), promoted);
+        assert_eq!(widen(&Drive::F64), json!(1.5));
+        assert_eq!(widen(&Drive::Char), json!("z"));
+        assert_eq!(widen(&Drive::Str), json!("s"));
+        assert_eq!(widen(&Drive::Bytes), json!([1, 2]));
+        assert_eq!(widen(&Drive::None), json!(null));
+        assert_eq!(widen(&Drive::SomeF32), promoted);
+        assert_eq!(widen(&Drive::Unit), json!(null));
+        assert_eq!(widen(&Drive::UnitStruct), json!(null));
+        assert_eq!(widen(&Drive::UnitVariant), json!("Uv"));
+        assert_eq!(widen(&Drive::NewtypeStruct), promoted);
+        assert_eq!(widen(&Drive::NewtypeVariant), json!({"Nv": promoted}));
+        assert_eq!(widen(&Drive::Seq), json!([promoted, 1]));
+        assert_eq!(widen(&Drive::Tuple), json!([promoted, true]));
+        assert_eq!(widen(&Drive::TupleStruct), json!([promoted]));
+        assert_eq!(widen(&Drive::TupleVariant), json!({"Tv": [promoted]}));
+        assert_eq!(widen(&Drive::MapEntry), json!({"k": promoted}));
+        assert_eq!(widen(&Drive::MapKeyValue), json!({"k": promoted}));
+        assert_eq!(widen(&Drive::StructSkip), json!({"a": 1}));
+        assert_eq!(widen(&Drive::StructVariant), json!({"Sv": {"a": promoted}}));
+        assert_eq!(widen(&Drive::HumanReadable), json!(true));
+    }
+}

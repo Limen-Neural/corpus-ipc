@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use serde::Deserialize;
+
 use super::*;
 
 #[test]
@@ -24,6 +26,27 @@ fn config_json_decimals_deserialize_as_float() {
         payload.config.get("arr"),
         Some(&ConfigValue::FloatArray(vec![1.0, 2.0]))
     );
+}
+
+#[test]
+fn config_value_visitor_covers_int_string_and_invalid_object() {
+    assert_eq!(
+        serde_json::from_str::<ConfigValue>("-3").unwrap(),
+        ConfigValue::Float(-3.0)
+    );
+    assert_eq!(
+        serde_json::from_value::<ConfigValue>(serde_json::json!("hi")).unwrap(),
+        ConfigValue::String("hi".into())
+    );
+    assert_eq!(
+        ConfigValue::deserialize(
+            serde::de::value::F32Deserializer::<serde::de::value::Error>::new(1.25)
+        )
+        .unwrap(),
+        ConfigValue::Float(1.25)
+    );
+    serde_json::from_str::<ConfigValue>(r#"{"not":"a-number"}"#)
+        .expect_err("plain objects are not config values");
 }
 
 #[test]
