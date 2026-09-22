@@ -18,15 +18,21 @@ Two modes:
   default `cargo tree --no-default-features --edges normal` graph excludes
   `axum`/`tokio`/`tower`/`zmq`. Cheap enough to run on every change.
 - `scripts/verify.sh --mode full` — adds the complete release/CI qualification
-  and **needs a working C++ compiler** (the `--all-features` path compiles
-  vendored ZeroMQ from C++ via `zmq-sys`): `cargo clippy --all-targets
-  --all-features --locked -- -D warnings`, `cargo test --all-features --locked`,
-  `cargo test -p ap-check --locked`, `RUSTDOCFLAGS="-D warnings" cargo doc
-  --no-deps --all-features --locked`, then `cargo package --list --locked`,
-  `cargo package --locked`, and `cargo publish --dry-run --locked` run once at
-  the end. It does not `cargo clean` between phases, so artifacts are reused.
+  and **needs a working C++ compiler** (the `zmq` / `--all-features` paths
+  compile vendored ZeroMQ from C++ via `zmq-sys`): a discrete `cargo check
+  --features zmq --locked` (matching the `validate` job's standalone zmq check),
+  `cargo clippy --all-targets --all-features --locked -- -D warnings`, `cargo
+  test --all-features --locked`, `cargo test -p ap-check --locked`,
+  `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --locked`, then
+  `cargo package --list --locked`, `cargo package --locked`, and `cargo publish
+  --dry-run --locked` run once at the end. It does not `cargo clean` between
+  phases, so artifacts are reused. Full mode does **not** re-run `validate`'s
+  discrete per-feature `cargo build --features server` / `cargo build
+  --all-features` / `cargo test --features server` steps: the all-features
+  clippy/test phases are a strict superset, so re-running the per-feature builds
+  would only repeat heavy work without catching anything they miss.
 
-Each phase prints a labeled banner (`==> [full 5/10] ...`); any failure exits
+Each phase prints a labeled banner (`==> [full 5/12] ...`); any failure exits
 non-zero and names the failing phase. There are no error-swallowing constructs
 and no silent skips. If the full-mode `--all-features` build fails with a C++
 `cc-rs` error (e.g. `fatal error: 'string' file not found`) rather than a

@@ -34,11 +34,15 @@ scripts/verify.sh --mode full --jobs 4         # opt-in Cargo jobs cap (heavy al
 
 Fast mode = `cargo fmt --check`, `cargo check --no-default-features`, `cargo
 check --features server`, and the boundary assertion that the default tree
-excludes axum/tokio/tower/zmq. Full mode adds all-targets/all-features clippy,
-`cargo test --all-features`, `cargo test -p ap-check`, rustdoc `-D warnings`, and
-`cargo package` / `cargo publish --dry-run` (run once, last; no `cargo clean`
-between phases). Each phase prints a banner and any failure names the failing
-phase and exits non-zero — no error swallowing, no silent skips. The
+excludes axum/tokio/tower/zmq. Full mode adds a discrete `cargo check --features
+zmq` (mirroring the CI `validate` job's standalone zmq check; needs C++),
+all-targets/all-features clippy, `cargo test --all-features`, `cargo test -p
+ap-check`, rustdoc `-D warnings`, and `cargo package` / `cargo publish
+--dry-run` (run once, last; no `cargo clean` between phases). Full mode relies on
+the all-features clippy/test phases as a superset rather than re-running CI's
+discrete per-feature `cargo build`/`cargo test` steps. Each phase prints a
+banner and any failure names the failing phase and exits non-zero — no error
+swallowing, no silent skips. The
 all-features/zmq build is the parallelism-heavy phase (`-j1` ~86.6 s vs `-j8`
 ~15.8 s), so the jobs cap is opt-in and applied only there; the fast path is
 never capped. See [`docs/compile-cost.md`](docs/compile-cost.md) for the observed

@@ -16,12 +16,22 @@
 #                    the dependency-boundary assertion that the default graph
 #                    excludes axum/tokio/tower/zmq. Mirrors the `validate` job's
 #                    fast per-feature checks.
-#   full             Everything in `release-qualification`: adds all-targets /
-#                    all-features clippy, all-features tests, the ap-check
-#                    canonical-encoding test, rustdoc (-D warnings), and the
-#                    package / publish --dry-run pair (run once, last). The
-#                    all-features path compiles vendored ZeroMQ from C++, so this
-#                    mode needs a working C++ compiler.
+#   full             Everything in `release-qualification`: adds a discrete
+#                    `cargo check --features zmq` (matching the `validate` job's
+#                    standalone zmq check), then all-targets / all-features
+#                    clippy, all-features tests, the ap-check canonical-encoding
+#                    test, rustdoc (-D warnings), and the package / publish
+#                    --dry-run pair (run once, last). The zmq and all-features
+#                    paths compile vendored ZeroMQ from C++, so this mode needs a
+#                    working C++ compiler.
+#
+#                    Full mode does NOT re-run ci.yml `validate`'s discrete
+#                    per-feature `cargo build --features server`, `cargo build
+#                    --all-features`, and `cargo test --features server` steps:
+#                    the all-features clippy/test phases are a strict superset
+#                    that compiles and tests every feature, so re-running the
+#                    per-feature builds would only repeat heavy work the issue
+#                    explicitly discourages without catching anything new.
 #
 # Every cargo invocation uses --locked because Cargo.lock is tracked.
 #
@@ -76,9 +86,11 @@ Modes:
            cargo check --features server --locked
            dependency-boundary assertion (default tree excludes axum/tokio/tower/zmq)
   full   Adds the full release/CI qualification (needs a C++ compiler for
-         --all-features): clippy --all-targets --all-features -D warnings,
-         test --all-features, test -p ap-check, rustdoc -D warnings,
-         package --list, package, publish --dry-run.
+         zmq / --all-features):
+           cargo check --features zmq --locked
+           clippy --all-targets --all-features -D warnings,
+           test --all-features, test -p ap-check, rustdoc -D warnings,
+           package --list, package, publish --dry-run.
 
 Options:
   --jobs N   Opt-in Cargo parallelism cap applied ONLY to the heavy full-mode
@@ -234,11 +246,11 @@ run_full() {
     # all-features qualification, then package/publish --dry-run ONCE at the end.
     # No `cargo clean` anywhere: artifacts are reused across phases.
     if [[ "$RUN_FMT" -eq 1 ]]; then
-        PHASE_TOTAL=11
+        PHASE_TOTAL=12
         banner "cargo fmt --check"
         cargo fmt --check
     else
-        PHASE_TOTAL=10
+        PHASE_TOTAL=11
     fi
 
     banner "cargo check --no-default-features --locked"
@@ -246,6 +258,12 @@ run_full() {
 
     banner "cargo check --features server --locked"
     cargo check --features server --locked
+
+    # Discrete zmq check, mirroring ci.yml `validate`'s standalone "Check zmq
+    # feature" step. This compiles vendored ZeroMQ from C++ (zmq-sys), so it
+    # lives in full mode, never in the C++-free fast mode.
+    banner "cargo check --features zmq --locked"
+    cargo check --features zmq --locked
 
     banner "dependency-boundary assertion (cargo tree --no-default-features --edges normal --locked)"
     assert_default_tree_boundary
