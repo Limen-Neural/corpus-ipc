@@ -59,15 +59,12 @@ pub fn parse_readout_packet(
     }
 
     let tick = i64::from_le_bytes(buf[0..8].try_into().expect("length checked"));
-    let mut readout = Vec::new();
-    if num_floats > 0 {
-        readout = Vec::with_capacity(num_floats);
-        for i in 0..num_floats {
-            let off = 8 + i * 4;
-            readout.push(f32::from_le_bytes(
-                buf[off..off + 4].try_into().expect("aligned payload"),
-            ));
-        }
+    let mut readout = Vec::with_capacity(num_floats);
+    for i in 0..num_floats {
+        let off = 8 + i * 4;
+        readout.push(f32::from_le_bytes(
+            buf[off..off + 4].try_into().expect("aligned payload"),
+        ));
     }
     Ok((tick, readout))
 }

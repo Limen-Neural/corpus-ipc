@@ -107,7 +107,7 @@ pub type ZmqRuntimeBackend = ZmqIpcBackend;
 ///
 /// ## Bounds
 ///
-/// [`parse_readout_packet`](crate::zmq_readout::parse_readout_packet) enforces a
+/// [`parse_readout_packet`] enforces a
 /// maximum float count before resizing the decoded cache (default
 /// [`DEFAULT_MAX_READOUT_FLOATS`](crate::zmq_readout::DEFAULT_MAX_READOUT_FLOATS),
 /// override via [`ENV_MAX_READOUT_FLOATS`](crate::zmq_readout::ENV_MAX_READOUT_FLOATS)).
