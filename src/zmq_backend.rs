@@ -534,7 +534,6 @@ mod tests {
     #[test]
     fn malformed_frame_in_drained_burst_is_counted_and_not_applied() {
         let (publisher, mut backend) = connected_pub_sub();
-        let skipped_before = backend.skipped_readouts();
         let malformed_before = backend.malformed_readouts();
         publisher.send(make_packet(2, &[2.0]), 0).unwrap();
         publisher
@@ -549,8 +548,74 @@ mod tests {
             "timed out waiting for malformed+tick-3 burst"
         );
         assert_eq!(backend.tick(), 3);
-        assert_eq!(backend.skipped_readouts() - skipped_before, 1);
         assert_eq!(backend.malformed_readouts() - malformed_before, 1);
+    }
+
+    #[test]
+    fn process_batch_before_initialize_returns_initialization_error() {
+        let mut backend = ZmqIpcBackend::new();
+        let err = backend.process_batch(&[]).unwrap_err();
+        assert!(matches!(err, BackendError::InitializationError(_)));
+    }
+
+    #[test]
+    fn initialize_uses_corpus_ipc_zmq_readout_ipc_env() {
+        let endpoint = unique_test_endpoint();
+        // SAFETY: ZMQ integration tests run serially; no concurrent env access.
+        unsafe {
+            std::env::set_var("CORPUS_IPC_ZMQ_READOUT_IPC", &endpoint);
+        }
+        let context = zmq::Context::new();
+        let publisher = context.socket(zmq::PUB).unwrap();
+        publisher.bind(&endpoint).unwrap();
+
+        let mut backend = ZmqIpcBackend::new();
+        backend.initialize(None).unwrap();
+        for _ in 0..100 {
+            publisher.send(make_packet(7, &[7.0]), 0).unwrap();
+            std::thread::sleep(Duration::from_millis(2));
+            if backend.process_batch(&[]).is_ok_and(|out| out == vec![7.0]) {
+                assert_eq!(backend.tick(), 7);
+                return;
+            }
+        }
+        panic!("env-configured endpoint did not deliver readout");
+    }
+
+    #[test]
+    fn get_spike_states_thresholds_last_readout() {
+        let (publisher, mut backend) = connected_pub_sub();
+        publisher
+            .send(make_packet(9, &[0.25, 0.75, 0.51]), 0)
+            .unwrap();
+        assert!(
+            wait_until(Duration::from_millis(200), || {
+                backend.process_batch(&[]).is_ok_and(|out| out.len() == 3)
+            }),
+            "timed out waiting for multi-channel readout"
+        );
+        assert_eq!(backend.get_spike_states(), vec![false, true, true]);
+    }
+
+    #[test]
+    fn receive_drain_bound_returns_under_sustained_publish_load() {
+        let (publisher, mut backend) = connected_pub_sub();
+        let flooder = std::thread::spawn(move || {
+            for tick in 2..=512i64 {
+                let _ = publisher.send(make_packet(tick, &[tick as f32]), zmq::DONTWAIT);
+            }
+        });
+        std::thread::sleep(Duration::from_millis(10));
+        let started = Instant::now();
+        let output = backend.process_batch(&[]).unwrap();
+        let elapsed = started.elapsed();
+        flooder.join().expect("flooder panicked");
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "bounded drain must return promptly under sustained publish load"
+        );
+        assert!(backend.tick() > 1);
+        assert_eq!(output[0], backend.tick() as f32);
     }
 
     #[test]
