@@ -11,6 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bounded ZMQ readout parser (`zmq_readout::parse_readout_packet`) shared by
+  production recv and tests; golden LE fixtures + SHA-256 manifest under
+  `test-vectors/zmq/` (LIM-1275, LIM-1328). Default decoded readout cap: 1024
+  floats (`CORPUS_IPC_ZMQ_MAX_READOUT_FLOATS` override).
+
+### Changed
+
+- `ZmqIpcBackend` rejects malformed or over-limit readout frames with
+  `BackendError` instead of logging and retaining cache; `EAGAIN` still returns
+  cached readout without error. Compatible with 0.1.x patch expectations for
+  supported frame sizes (≤ cap, aligned); frames above the cap are newly
+  rejected.
+
 - Canonical wire-version-1 encoder `encode_canonical_ipc_message` and dedicated
   `CanonicalEncodeError` (LIM-1326). Produces deterministic, sorted-key bytes
   for the project wire profile (documented in `docs/wire-encoding.md`), reusing

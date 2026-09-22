@@ -36,6 +36,7 @@
 
 use std::sync::{Mutex, MutexGuard};
 
+use crate::zmq_readout::{max_readout_float_limit, parse_readout_packet};
 use crate::{BackendError, IpcBackend};
 
 /// Default ZeroMQ IPC endpoint for receiving compute data packets.
@@ -96,6 +97,22 @@ pub type ZmqRuntimeBackend = ZmqIpcBackend;
 /// [0..8]   tick     i64 LE      monotonic tick counter
 /// [8..]    readout  N×f32 LE    lobe outputs
 /// ```
+///
+/// An **88-byte** frame is **tick + 20 floats** (not auto-split into 16 readouts
+/// plus 4 neuromodulator scores). Historical producers that appended four
+/// modulator scalars after sixteen readouts produce the same length as a valid
+/// 20-float readout; this backend does not infer or strip that layout. Typed
+/// neuromodulator extraction belongs to explicit higher-level parsing (see
+/// [`crate::NeuromodulatorSnapshot`] JSON/`from_scores` ingress, not SUB auto-detection).
+///
+/// ## Bounds
+///
+/// [`parse_readout_packet`](crate::zmq_readout::parse_readout_packet) enforces a
+/// maximum float count before resizing the decoded cache (default
+/// [`DEFAULT_MAX_READOUT_FLOATS`](crate::zmq_readout::DEFAULT_MAX_READOUT_FLOATS),
+/// override via [`ENV_MAX_READOUT_FLOATS`](crate::zmq_readout::ENV_MAX_READOUT_FLOATS)).
+/// libzmq still allocates the raw received buffer; this cap applies only to the
+/// decoded `Vec<f32>`.
 pub struct ZmqIpcBackend {
     context: zmq::Context,
     /// Serialized so the backend is `Sync` without claiming `zmq::Socket: Sync`.
@@ -171,6 +188,16 @@ impl ZmqIpcBackend {
         Ok(())
     }
 
+    /// Apply one received packet using the same validation path as production recv.
+    fn ingest_readout_packet(&mut self, buf: &[u8]) -> Result<(), BackendError> {
+        let max_floats = max_readout_float_limit();
+        let (tick, readout) = parse_readout_packet(buf, max_floats)?;
+        self.tick = tick;
+        self.last_readout.clear();
+        self.last_readout.extend_from_slice(&readout);
+        Ok(())
+    }
+
     fn receive_readout(&mut self) -> Result<Vec<f32>, BackendError> {
         let recv_result = {
             let mut guard = self.lock_sub_socket();
@@ -181,19 +208,7 @@ impl ZmqIpcBackend {
         };
 
         match recv_result {
-            Ok(buf) if buf.len() >= 8 && (buf.len() - 8).is_multiple_of(4) => {
-                self.tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
-                let num_floats = (buf.len() - 8) / 4;
-                self.last_readout.resize(num_floats, 0.0);
-                for i in 0..num_floats {
-                    let off = 8 + i * 4;
-                    self.last_readout[i] =
-                        f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
-                }
-            }
-            Ok(buf) => {
-                eprintln!("[zmq-ipc] Unexpected packet size: {} bytes", buf.len());
-            }
+            Ok(buf) => self.ingest_readout_packet(&buf)?,
             Err(zmq::Error::EAGAIN) => {
                 // No new packet available — return cached readout.
             }
@@ -205,6 +220,18 @@ impl ZmqIpcBackend {
         }
 
         Ok(self.last_readout.clone())
+    }
+
+    /// Test/conformance hook: production ingest path without a live recv.
+    #[doc(hidden)]
+    pub fn apply_readout_packet_for_tests(&mut self, buf: &[u8]) -> Result<(), BackendError> {
+        self.ingest_readout_packet(buf)
+    }
+
+    /// Test/conformance hook: observe `(tick, readout cache)` without recv.
+    #[doc(hidden)]
+    pub fn readout_cache_snapshot_for_tests(&self) -> (i64, Vec<f32>) {
+        (self.tick, self.last_readout.clone())
     }
 }
 
@@ -352,20 +379,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_dynamic_packet() {
+    fn parse_dynamic_packet_via_production_ingest() {
         let readout: Vec<f32> = (0..20).map(|i| i as f32 * 0.1).collect();
         let tick: i64 = 42_000;
         let buf = make_packet(tick, &readout);
 
         let mut b = ZmqIpcBackend::new();
-        // Manually simulate receiving the packet
-        b.tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
-        let num_floats = (buf.len() - 8) / 4;
-        b.last_readout.resize(num_floats, 0.0);
-        for i in 0..num_floats {
-            let off = 8 + i * 4;
-            b.last_readout[i] = f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
-        }
+        b.apply_readout_packet_for_tests(&buf)
+            .expect("valid 20-float frame");
 
         assert_eq!(b.tick, tick);
         assert_eq!(b.last_readout.len(), 20);
@@ -392,21 +413,27 @@ mod tests {
         let initial_readout = b.last_readout.clone();
         let initial_tick = b.tick;
 
-        // A 5-byte garbage packet has an invalid length
         let bad_buf: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF, 0x00];
-
-        // Simulate a recv call that would get this bad packet
-        // In a real scenario, the Ok(buf) branch for bad length would be taken
-        // and an error printed, but the state would not change.
-        if bad_buf.len() < 8 || !(bad_buf.len() - 8).is_multiple_of(4) {
-            // This is what should happen inside receive_readout
-            eprintln!("[test] Malformed packet received");
-        } else {
-            // this part should not be reached
-        }
+        let err = b
+            .apply_readout_packet_for_tests(bad_buf)
+            .expect_err("truncated packet must fail");
+        assert!(
+            matches!(err, BackendError::CommunicationError(_)),
+            "malformed framing is not EAGAIN: {err:?}"
+        );
 
         assert_eq!(b.last_readout, initial_readout);
         assert_eq!(b.tick, initial_tick);
+    }
+
+    #[test]
+    fn over_limit_packet_is_invalid_input_not_communication() {
+        use crate::zmq_readout::parse_readout_packet;
+
+        let max = 4;
+        let buf = make_packet(1, &[0.0; 5]);
+        let err = parse_readout_packet(&buf, max).expect_err("five floats exceeds cap of four");
+        assert!(matches!(err, BackendError::InvalidInput(_)));
     }
 
     #[test]
