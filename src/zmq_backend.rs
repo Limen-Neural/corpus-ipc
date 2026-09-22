@@ -35,6 +35,7 @@
 //!   `Drop` calls `zmq_close`).
 
 use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use crate::{BackendError, IpcBackend};
 
@@ -53,6 +54,11 @@ struct ExclusiveSocket {
 }
 
 const READOUT_RCVHWM: i32 = 16;
+/// Cap on non-blocking recv iterations per `process_batch` so a saturated
+/// publisher cannot pin the backend mutex forever waiting for EAGAIN.
+const RECEIVE_DRAIN_MAX_MESSAGES: u32 = 64; // >= READOUT_RCVHWM*4; keep const-friendly
+/// Soft wall-clock budget for the same drain (parse time included).
+const RECEIVE_DRAIN_MAX_DURATION: Duration = Duration::from_millis(5);
 
 impl ExclusiveSocket {
     fn recv_bytes_dontwait(&mut self) -> zmq::Result<Vec<u8>> {
@@ -197,7 +203,17 @@ impl ZmqIpcBackend {
 
     fn receive_readout(&mut self) -> Result<Vec<f32>, BackendError> {
         let mut newest = None;
+        let started = Instant::now();
+        let mut received = 0u32;
         loop {
+            if received >= RECEIVE_DRAIN_MAX_MESSAGES
+                || started.elapsed() >= RECEIVE_DRAIN_MAX_DURATION
+            {
+                // Bound reached with the socket possibly still non-empty: keep
+                // the newest valid frame seen this call; leftover frames remain
+                // for a later process_batch (or are dropped by RCVHWM).
+                break;
+            }
             let recv_result = {
                 let mut guard = self.lock_sub_socket();
                 let socket = guard.as_mut().ok_or_else(|| {
@@ -208,6 +224,7 @@ impl ZmqIpcBackend {
 
             match recv_result {
                 Ok(buf) if buf.len() >= 8 && (buf.len() - 8).is_multiple_of(4) => {
+                    received = received.saturating_add(1);
                     if newest.is_some() {
                         self.skipped_readouts = self.skipped_readouts.saturating_add(1);
                     }
@@ -221,6 +238,7 @@ impl ZmqIpcBackend {
                     newest = Some((tick, readout));
                 }
                 Ok(buf) => {
+                    received = received.saturating_add(1);
                     self.malformed_readouts = self.malformed_readouts.saturating_add(1);
                     eprintln!("[zmq-ipc] Unexpected packet size: {} bytes", buf.len());
                 }
@@ -366,6 +384,19 @@ mod _assert_not_sync {
 
 #[cfg(test)]
 mod tests {
+
+    /// Wait until `pred` holds or `timeout` elapses (ZMQ delivery is async).
+    fn wait_until(timeout: Duration, mut pred: impl FnMut() -> bool) -> bool {
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            if pred() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        pred()
+    }
+
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -479,8 +510,13 @@ mod tests {
                 .send(make_packet(tick, &[tick as f32]), 0)
                 .unwrap();
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
+        assert!(
+            wait_until(Duration::from_millis(200), || {
+                let _ = backend.process_batch(&[]);
+                backend.tick() > 1 && backend.skipped_readouts() > 0
+            }),
+            "timed out waiting for drained burst to advance tick/skipped counters"
+        );
         let output = backend.process_batch(&[]).unwrap();
         let newest_accepted_tick = backend.tick();
         assert!(newest_accepted_tick > 1);
@@ -505,9 +541,13 @@ mod tests {
             .send([0xde, 0xad, 0xbe, 0xef].as_slice(), 0)
             .unwrap();
         publisher.send(make_packet(3, &[3.0]), 0).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(20));
-
-        assert_eq!(backend.process_batch(&[]).unwrap(), vec![3.0]);
+        assert!(
+            wait_until(Duration::from_millis(200), || {
+                let out = backend.process_batch(&[]).unwrap();
+                out == vec![3.0] && backend.tick() == 3
+            }),
+            "timed out waiting for malformed+tick-3 burst"
+        );
         assert_eq!(backend.tick(), 3);
         assert_eq!(backend.skipped_readouts() - skipped_before, 1);
         assert_eq!(backend.malformed_readouts() - malformed_before, 1);
