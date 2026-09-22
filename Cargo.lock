@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "ap-check"
+version = "0.0.0"
+dependencies = [
+ "corpus-ipc",
+ "serde_json",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"

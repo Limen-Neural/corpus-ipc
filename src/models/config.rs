@@ -90,7 +90,10 @@ fn validate_config_entries(
 /// visitor rather than `#[serde(untagged)]` so JSON decimals still decode
 /// when a consumer unifies serde_json `arbitrary_precision` (that feature
 /// presents non-integer numbers to `deserialize_any` as a private Number
-/// map, which untagged + `deserialize_with = f32` does not accept).
+/// map, which untagged + `deserialize_with = f32` does not accept). The
+/// `visit_map` arm accepts *only* that synthetic single-entry number map and
+/// parses its decimal token directly to `f32`; any other object (including a
+/// user object spoofing the magic key) is rejected.
 ///
 /// Round-tripping `Integer(42)` through JSON yields `Float(42.0)`.
 /// Large integers (> ~2^24) may lose precision in f32.
@@ -164,15 +167,23 @@ impl<'de> Deserialize<'de> for ConfigValue {
 
             fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
                 // serde_json `arbitrary_precision` presents JSON floats to
-                // `deserialize_any` as a map keyed by `$serde_json::private::Number`.
+                // `deserialize_any` as a synthetic map keyed by the private token
+                // `$serde_json::private::Number`. Only that synthetic number is a
+                // valid `ConfigValue`: `serde_json::Number::deserialize` accepts it
+                // (under `arbitrary_precision`) but rejects a genuine user object
+                // with a different shape (see reviewer item 2 and the
+                // `{"not":"a-number"}` rejection test). We then parse the number's
+                // decimal token straight to `f32` rather than going through
+                // `as_f64()`; the intermediate `f64` widening double-rounds values
+                // near an `f32` midpoint and can pick the wrong neighbour (item 3).
                 let number = serde_json::Number::deserialize(MapAccessDeserializer::new(map))?;
-                let Some(as_f64) = number.as_f64() else {
+                let Ok(parsed) = number.to_string().parse::<f32>() else {
                     return Err(de::Error::custom(ValidationError::non_finite(
                         "value",
                         f32::NAN,
                     )));
                 };
-                de_finite_f32(as_f64.into_deserializer()).map(ConfigValue::Float)
+                de_finite_f32(parsed.into_deserializer()).map(ConfigValue::Float)
             }
         }
 

@@ -115,9 +115,10 @@ fn canonical_preserves_unicode_keys_and_values() {
 fn canonical_f32_bytes_match_f64_promotion_not_shortest_f32() {
     // Default serde_json Number stores f32 as `f as f64`, so 0.1_f32 is
     // 0.10000000149011612 on the wire. serde_json `arbitrary_precision` would
-    // otherwise emit shortest-f32 `0.1`. This lock is the contract; re-run
-    // with `--features _ci_serde_json_arbitrary_precision` (CI does) so
-    // feature unification cannot silently change the bytes.
+    // otherwise emit shortest-f32 `0.1`. This lock is the contract; the
+    // `ci/ap-check` workspace member re-runs it with `arbitrary_precision`
+    // unified onto the graph so feature unification cannot silently change the
+    // bytes.
     let bytes = encode_canonical_ipc_message(&IpcMessage::Loss(0.1)).unwrap();
     assert_eq!(
         bytes,

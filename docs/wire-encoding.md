@@ -47,8 +47,9 @@ before the payload is used.
    `Number` (no `arbitrary_precision`) and keeps bytes identical if a
    consumer's dependency graph enables serde_json `arbitrary_precision`
    (which would otherwise emit shortest-`f32` decimals such as `0.1` instead
-   of `0.10000000149011612` for `0.1_f32`). Integers still encode as JSON
-   integers (`42`, not `42.0`).
+   of `0.10000000149011612` for `0.1_f32`). Rust integer types (`i*`/`u*`) are
+   unaffected and still encode as JSON integers (`42`); an `f32` with an
+   integral value encodes as a JSON float (`42.0`).
 5. **Determinism.** The same message encodes to identical bytes across runs
    and processes.
 

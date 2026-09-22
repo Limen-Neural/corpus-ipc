@@ -178,49 +178,31 @@ impl<S: Serializer> Serializer for F32AsF64<S> {
     }
 }
 
-impl<S: SerializeSeq> SerializeSeq for F32AsF64<S> {
-    type Ok = S::Ok;
-    type Error = S::Error;
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Self::Error> {
-        self.0.serialize_element(&F32AsF64(value))
-    }
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.0.end()
-    }
+/// Implement one of serde's sequence-like `Serialize*` traits for
+/// `F32AsF64<S>` by forwarding the single element/field method through the
+/// `F32AsF64` wrapper and delegating `end()` to the inner accessor. Every impl
+/// in this cluster (`SerializeSeq`/`SerializeTuple`/`SerializeTupleStruct`/
+/// `SerializeTupleVariant`) has the identical shape, so stamping them out keeps
+/// the widening behavior in exactly one place.
+macro_rules! impl_forwarding_seq {
+    ($trait:ident, $method:ident) => {
+        impl<S: $trait> $trait for F32AsF64<S> {
+            type Ok = S::Ok;
+            type Error = S::Error;
+            fn $method<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Self::Error> {
+                self.0.$method(&F32AsF64(value))
+            }
+            fn end(self) -> Result<Self::Ok, Self::Error> {
+                self.0.end()
+            }
+        }
+    };
 }
 
-impl<S: SerializeTuple> SerializeTuple for F32AsF64<S> {
-    type Ok = S::Ok;
-    type Error = S::Error;
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Self::Error> {
-        self.0.serialize_element(&F32AsF64(value))
-    }
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.0.end()
-    }
-}
-
-impl<S: SerializeTupleStruct> SerializeTupleStruct for F32AsF64<S> {
-    type Ok = S::Ok;
-    type Error = S::Error;
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Self::Error> {
-        self.0.serialize_field(&F32AsF64(value))
-    }
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.0.end()
-    }
-}
-
-impl<S: SerializeTupleVariant> SerializeTupleVariant for F32AsF64<S> {
-    type Ok = S::Ok;
-    type Error = S::Error;
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Self::Error> {
-        self.0.serialize_field(&F32AsF64(value))
-    }
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.0.end()
-    }
-}
+impl_forwarding_seq!(SerializeSeq, serialize_element);
+impl_forwarding_seq!(SerializeTuple, serialize_element);
+impl_forwarding_seq!(SerializeTupleStruct, serialize_field);
+impl_forwarding_seq!(SerializeTupleVariant, serialize_field);
 
 impl<S: SerializeMap> SerializeMap for F32AsF64<S> {
     type Ok = S::Ok;
@@ -243,41 +225,34 @@ impl<S: SerializeMap> SerializeMap for F32AsF64<S> {
     }
 }
 
-impl<S: SerializeStruct> SerializeStruct for F32AsF64<S> {
-    type Ok = S::Ok;
-    type Error = S::Error;
-    fn serialize_field<T: Serialize + ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<(), Self::Error> {
-        self.0.serialize_field(key, &F32AsF64(value))
-    }
-    fn skip_field(&mut self, key: &'static str) -> Result<(), Self::Error> {
-        self.0.skip_field(key)
-    }
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.0.end()
-    }
+/// Implement one of serde's struct-like `Serialize*` traits for
+/// `F32AsF64<S>`. `SerializeStruct` and `SerializeStructVariant` share the
+/// identical `serialize_field(key, &F32AsF64(value))` + `skip_field` + `end`
+/// shape, so the widening wrapper lives in a single spot.
+macro_rules! impl_forwarding_struct {
+    ($trait:ident) => {
+        impl<S: $trait> $trait for F32AsF64<S> {
+            type Ok = S::Ok;
+            type Error = S::Error;
+            fn serialize_field<T: Serialize + ?Sized>(
+                &mut self,
+                key: &'static str,
+                value: &T,
+            ) -> Result<(), Self::Error> {
+                self.0.serialize_field(key, &F32AsF64(value))
+            }
+            fn skip_field(&mut self, key: &'static str) -> Result<(), Self::Error> {
+                self.0.skip_field(key)
+            }
+            fn end(self) -> Result<Self::Ok, Self::Error> {
+                self.0.end()
+            }
+        }
+    };
 }
 
-impl<S: SerializeStructVariant> SerializeStructVariant for F32AsF64<S> {
-    type Ok = S::Ok;
-    type Error = S::Error;
-    fn serialize_field<T: Serialize + ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<(), Self::Error> {
-        self.0.serialize_field(key, &F32AsF64(value))
-    }
-    fn skip_field(&mut self, key: &'static str) -> Result<(), Self::Error> {
-        self.0.skip_field(key)
-    }
-    fn end(self) -> Result<Self::Ok, Self::Error> {
-        self.0.end()
-    }
-}
+impl_forwarding_struct!(SerializeStruct);
+impl_forwarding_struct!(SerializeStructVariant);
 
 #[cfg(test)]
 mod tests {

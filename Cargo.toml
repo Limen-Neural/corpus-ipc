@@ -48,10 +48,6 @@ tokio = { version = "1", optional = true, default-features = false, features = [
 [features]
 default = []
 zmq = ["dep:zmq"]
-# Not a consumer feature. CI enables it to prove `encode_canonical_ipc_message`
-# is independent of serde_json `arbitrary_precision` Cargo feature unification.
-# Do not enable in application manifests.
-_ci_serde_json_arbitrary_precision = ["serde_json/arbitrary_precision"]
 # HTTP service stack for `corpus_ipc_server` only. `tower` is a mandatory
 # dependency of optional `axum`, not a direct crate dep. Axum's `json` feature
 # also pulls `serde_json` for the binary; the library already depends on it for
@@ -67,3 +63,7 @@ required-features = ["server"]
 all-features = false
 
 [workspace]
+# `ci/ap-check` is a CI-only member (publish = false) that proves canonical
+# encoding stays independent of serde_json `arbitrary_precision`. It is not
+# part of the published corpus-ipc artifact (see the `include` allow-list).
+members = ["ci/ap-check"]
