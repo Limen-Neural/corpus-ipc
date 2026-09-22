@@ -91,9 +91,12 @@ fn validate_config_entries(
 /// when a consumer unifies serde_json `arbitrary_precision` (that feature
 /// presents non-integer numbers to `deserialize_any` as a private Number
 /// map, which untagged + `deserialize_with = f32` does not accept). The
-/// `visit_map` arm accepts *only* that synthetic single-entry number map and
-/// parses its decimal token directly to `f32`; any other object (including a
-/// user object spoofing the magic key) is rejected.
+/// `visit_map` arm deserializes the map into a `serde_json::Value` and
+/// preserves the JSON value type: only `Value::Number` is accepted (its
+/// decimal token is parsed directly to `f32`); any other value type -
+/// including a user object spoofing the magic key - is rejected. See the
+/// `visit_map` arm for the one residual, arbitrary_precision-only edge case
+/// that serde_json makes indistinguishable from a genuine number.
 ///
 /// Round-tripping `Integer(42)` through JSON yields `Float(42.0)`.
 /// Large integers (> ~2^24) may lose precision in f32.
@@ -168,22 +171,43 @@ impl<'de> Deserialize<'de> for ConfigValue {
             fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
                 // serde_json `arbitrary_precision` presents JSON floats to
                 // `deserialize_any` as a synthetic map keyed by the private token
-                // `$serde_json::private::Number`. Only that synthetic number is a
-                // valid `ConfigValue`: `serde_json::Number::deserialize` accepts it
-                // (under `arbitrary_precision`) but rejects a genuine user object
-                // with a different shape (see reviewer item 2 and the
-                // `{"not":"a-number"}` rejection test). We then parse the number's
-                // decimal token straight to `f32` rather than going through
-                // `as_f64()`; the intermediate `f64` widening double-rounds values
-                // near an `f32` midpoint and can pick the wrong neighbour (item 3).
-                let number = serde_json::Number::deserialize(MapAccessDeserializer::new(map))?;
-                let Ok(parsed) = number.to_string().parse::<f32>() else {
-                    return Err(de::Error::custom(ValidationError::non_finite(
-                        "value",
-                        f32::NAN,
-                    )));
-                };
-                de_finite_f32(parsed.into_deserializer()).map(ConfigValue::Float)
+                // `$serde_json::private::Number`. Deserialize the map into a
+                // `serde_json::Value` first and preserve the JSON value *type*:
+                // serde_json's own key classifier turns the synthetic number map
+                // back into `Value::Number`, while an ordinary user object (e.g.
+                // `{"not":"a-number"}`) surfaces as `Value::Object`. Accept only
+                // `Value::Number`; reject every other variant (`Object`, `Array`,
+                // `String`, `Bool`, `Null`) with the crate's typed validation
+                // error. That rejects spoofed user objects in the default build,
+                // where the spoof reaches this arm as a genuine `Value::Object`.
+                //
+                // For a genuine number we parse its decimal token straight to
+                // `f32` rather than going through `as_f64()`; the intermediate
+                // `f64` widening double-rounds values near an `f32` midpoint and
+                // can pick the wrong neighbour.
+                //
+                // Known limitation (arbitrary_precision only): when a consumer
+                // unifies `serde_json/arbitrary_precision`, serde_json represents a
+                // real number and a user object literally keyed
+                // `$serde_json::private::Number` with a single string value as the
+                // exact same map, so the classifier collapses both into
+                // `Value::Number`. The exact-form spoof is therefore
+                // indistinguishable from a real number at this layer and cannot be
+                // rejected without also rejecting genuine decimals. Malformed
+                // spoofs (extra keys, non-string value, a different key) still
+                // surface as `Value::Object` and are rejected.
+                match serde_json::Value::deserialize(MapAccessDeserializer::new(map))? {
+                    serde_json::Value::Number(number) => {
+                        let Ok(parsed) = number.to_string().parse::<f32>() else {
+                            return Err(de::Error::custom(ValidationError::non_finite(
+                                "value",
+                                f32::NAN,
+                            )));
+                        };
+                        de_finite_f32(parsed.into_deserializer()).map(ConfigValue::Float)
+                    }
+                    _ => Err(de::Error::custom(ValidationError::nested_metadata("value"))),
+                }
             }
         }
 
