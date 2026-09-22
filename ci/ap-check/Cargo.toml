@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
+# CI-only workspace member. This package is NOT published (it is excluded from
+# the corpus-ipc registry artifact by that crate's `include` allow-list). Its
+# sole purpose is to prove `corpus-ipc`'s canonical encoding stays independent
+# of serde_json's `arbitrary_precision` Cargo feature.
+#
+# Because this package enables `serde_json/arbitrary_precision` and depends on
+# `corpus-ipc` via path in the same build, Cargo feature unification turns
+# `arbitrary_precision` on for `corpus-ipc` here. That reproduces the exact
+# scenario a consumer hits when unifying `arbitrary_precision` onto the graph,
+# without corpus-ipc having to publish a public feature to simulate it.
+[package]
+name = "ap-check"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98.1"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[dev-dependencies]
+corpus-ipc = { path = "../.." }
+serde_json = { version = "1.0", features = ["arbitrary_precision"] }

@@ -333,7 +333,13 @@ pub enum CanonicalEncodeError {
 ///    insertion-ordered `IndexMap` and the explicit sort still applies. The
 ///    public [`crate::ConfigPayload`] / [`crate::BatchMetadata`] field types
 ///    stay `HashMap`.
-/// 3. **Wire version 1.** The payload is wrapped in [`WireEnvelope::new`], so
+/// 3. **Feature-independent floats.** Every `f32` is widened to `f64`
+///    (`f64::from`) before it is stored as a JSON number, matching default
+///    serde_json `Number` (no `arbitrary_precision`). That keeps bytes stable
+///    if a consumer's dependency graph enables serde_json's
+///    `arbitrary_precision` feature: without the widen, `0.1_f32` encodes as
+///    `0.10000000149011612` by default but `0.1` under that feature.
+/// 4. **Wire version 1.** The payload is wrapped in [`WireEnvelope::new`], so
 ///    `wire_version` is [`WireCompatibility::CURRENT`].
 ///
 /// Bytes produced here decode through [`decode_ipc_message_json`].
@@ -357,7 +363,11 @@ pub fn encode_canonical_ipc_message(message: &IpcMessage) -> Result<Vec<u8>, Can
     //    unification), `Value` becomes an insertion-ordered `IndexMap`, so the
     //    explicit recursive sort is what keeps the bytes independent of
     //    `HashMap` iteration order and the wider feature set.
-    let mut value = serde_json::to_value(&envelope).map_err(CanonicalEncodeError::Json)?;
+    // 4. Widen f32 → f64 before Number so float decimals do not depend on
+    //    serde_json `arbitrary_precision` (also Cargo-unified).
+    let mut value =
+        crate::canonical_ser::serialize_f32_as_f64(&envelope, serde_json::value::Serializer)
+            .map_err(CanonicalEncodeError::Json)?;
     value.sort_all_objects();
     serde_json::to_vec(&value).map_err(CanonicalEncodeError::Json)
 }

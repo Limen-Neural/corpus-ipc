@@ -83,6 +83,10 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo test --all-features
 
+      - name: Canonical encode vs serde_json arbitrary_precision
+        if: runner.os == 'Linux'
+        run: cargo test -p ap-check
+
   release-qualification:
     name: Release qualification (public artifact)
     runs-on: ubuntu-latest
@@ -114,6 +118,9 @@ jobs:
 
       - name: Test all features
         run: cargo test --all-features --locked
+
+      - name: Canonical encode vs serde_json arbitrary_precision
+        run: cargo test -p ap-check --locked
 
       - name: Docs (deny warnings)
         run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features --locked

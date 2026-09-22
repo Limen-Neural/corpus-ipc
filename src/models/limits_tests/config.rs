@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use serde::Deserialize;
+
 use super::*;
 
 #[test]
@@ -13,6 +15,65 @@ fn duplicate_config_keys_are_rejected() {
         "duplicate key error: {err}"
     );
 }
+
+#[test]
+fn config_json_decimals_deserialize_as_float() {
+    let raw = r#"{"session_id":null,"config":{"a":1.0,"b":0.1,"arr":[1.0,2.0]}}"#;
+    let payload = serde_json::from_str::<ConfigPayload>(raw).expect("JSON decimals must decode");
+    assert_eq!(payload.config.get("a"), Some(&ConfigValue::Float(1.0)));
+    assert_eq!(payload.config.get("b"), Some(&ConfigValue::Float(0.1)));
+    assert_eq!(
+        payload.config.get("arr"),
+        Some(&ConfigValue::FloatArray(vec![1.0, 2.0]))
+    );
+}
+
+#[test]
+fn config_value_visitor_covers_int_string_and_invalid_object() {
+    assert_eq!(
+        serde_json::from_str::<ConfigValue>("-3").unwrap(),
+        ConfigValue::Float(-3.0)
+    );
+    assert_eq!(
+        serde_json::from_value::<ConfigValue>(serde_json::json!("hi")).unwrap(),
+        ConfigValue::String("hi".into())
+    );
+    assert_eq!(
+        ConfigValue::deserialize(
+            serde::de::value::F32Deserializer::<serde::de::value::Error>::new(1.25)
+        )
+        .unwrap(),
+        ConfigValue::Float(1.25)
+    );
+    serde_json::from_str::<ConfigValue>(r#"{"not":"a-number"}"#)
+        .expect_err("plain objects are not config values");
+}
+
+/// Item 2: a user-provided JSON object literally keyed with serde_json's
+/// synthetic arbitrary-precision token must be rejected, not silently decoded
+/// as `Float`. Parsing WITHOUT the `arbitrary_precision` feature yields a real
+/// `Value::Object`, so this exercises the spoofed-object path.
+#[test]
+fn config_value_visitor_rejects_spoofed_number_object() {
+    let spoofed: serde_json::Value =
+        serde_json::from_str(r#"{"$serde_json::private::Number":"1.25"}"#)
+            .expect("spoofed object parses as a JSON value");
+    let decoded = serde_json::from_value::<ConfigValue>(spoofed);
+    assert!(
+        decoded.is_err(),
+        "spoofed number object must be rejected, got {decoded:?}"
+    );
+
+    // An object with the magic key plus an extra entry is also rejected.
+    serde_json::from_str::<ConfigValue>(r#"{"$serde_json::private::Number":"1.25","extra":true}"#)
+        .expect_err("multi-entry object must be rejected");
+}
+
+// Item 3 (parse-decimal-directly-to-f32 under serde_json arbitrary_precision)
+// is exercised in the `ci/ap-check` workspace member, where that feature is
+// unified onto the whole graph so the `visit_map` path fires. Keeping it here
+// would be dead code now that corpus-ipc no longer publishes a feature to turn
+// arbitrary_precision on.
 
 #[test]
 fn config_map_accepts_exact_max_and_rejects_overflow() {

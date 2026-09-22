@@ -37,6 +37,7 @@
 //! before the payload is used. See [`compatibility`] for the encoding rules
 //! (unknown fields ignored; unknown [`IpcMessage`] variants never default).
 
+mod canonical_ser;
 pub mod compatibility;
 pub mod error;
 pub mod models;
