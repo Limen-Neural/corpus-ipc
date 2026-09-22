@@ -28,8 +28,8 @@
 //!   a backend in `Arc<Mutex<Box<dyn IpcBackend>>>`.
 //! - **Initialize**: creates, subscribes, and connects the SUB socket on the
 //!   calling thread, then stores it under the mutex. Idempotent after success.
-//! - **Process**: non-blocking `recv` (`zmq::DONTWAIT`) under the mutex;
-//!   `EAGAIN` returns the cached readout.
+//! - **Process**: drains non-blocking `recv` calls (`zmq::DONTWAIT`) under the
+//!   mutex until `EAGAIN`, then returns the newest valid readout received.
 //! - **Drop / reset**: `reset` drops the socket under the mutex. `Drop` of
 //!   the backend closes it through exclusive ownership (`zmq::Socket`'s
 //!   `Drop` calls `zmq_close`).
@@ -52,6 +52,8 @@ struct ExclusiveSocket {
     socket: zmq::Socket,
 }
 
+const READOUT_RCVHWM: i32 = 16;
+
 impl ExclusiveSocket {
     fn recv_bytes_dontwait(&mut self) -> zmq::Result<Vec<u8>> {
         self.socket.recv_bytes(zmq::DONTWAIT)
@@ -63,7 +65,12 @@ impl ExclusiveSocket {
 pub type ZmqRuntimeBackend = ZmqIpcBackend;
 
 /// Generic IPC backend — subscribes to the remote compute's ZMQ PUB socket and
-/// returns the latest compute readouts on each call.
+/// returns the latest compute readout available on each call. The SUB socket
+/// has a receive high-water mark of 16 packets. `process_batch` drains the
+/// socket until `EAGAIN` and applies only the last valid packet; use
+/// [`ZmqIpcBackend::skipped_readouts`] to observe valid packets superseded by
+/// that latest-value policy. Drops performed internally by libzmq at the HWM
+/// are silent and therefore cannot be included in the counter.
 ///
 /// Implements [`IpcBackend`]. This backend is a binary readout subscriber, not
 /// a [`crate::HybridFlowBackend`]: it does not send or receive structured
@@ -78,7 +85,7 @@ pub type ZmqRuntimeBackend = ZmqIpcBackend;
 /// | Move to another thread | Supported. libzmq permits socket migration across a memory barrier; `Send` of this owned value is that barrier. |
 /// | Share `&ZmqIpcBackend` | Allowed (`Sync`). Recv and `reset` close are serialized by an internal `Mutex`. Raw `zmq::Socket` is **not** `Sync` and is never shared. |
 /// | `initialize` | `&mut self`. Creates, subscribes, and connects the SUB socket on the calling thread, then stores it under the mutex. Idempotent after success. |
-/// | `process_batch` | `&mut self`. Non-blocking recv under the mutex; `EAGAIN` returns the cached readout. |
+/// | `process_batch` | `&mut self`. Drains non-blocking recv calls under the mutex; `EAGAIN` returns the newest valid readout or the cache. |
 /// | `save_state` / `get_spike_states` | `&self`. Do not touch the socket. |
 /// | `reset` | `&mut self`. Drops the SUB socket under the mutex. |
 /// | `Drop` | Closes the socket through exclusive ownership of the backend (`zmq_close`). |
@@ -103,6 +110,8 @@ pub struct ZmqIpcBackend {
     initialized: bool,
     pub(crate) last_readout: Vec<f32>,
     pub tick: i64,
+    skipped_readouts: u64,
+    malformed_readouts: u64,
 }
 
 impl ZmqIpcBackend {
@@ -118,6 +127,8 @@ impl ZmqIpcBackend {
             initialized: false,
             last_readout: Vec::new(),
             tick: 0,
+            skipped_readouts: 0,
+            malformed_readouts: 0,
         }
     }
 
@@ -127,6 +138,19 @@ impl ZmqIpcBackend {
     /// Useful for consumers that want to observe freshness without side effects.
     pub fn tick(&self) -> i64 {
         self.tick
+    }
+
+    /// Number of valid queued readouts discarded in favor of a newer readout.
+    ///
+    /// This is a lower bound on transport loss: libzmq silently drops packets
+    /// when the receive HWM is exceeded, before this backend can count them.
+    pub fn skipped_readouts(&self) -> u64 {
+        self.skipped_readouts
+    }
+
+    /// Number of malformed readout frames ignored without changing the cache.
+    pub fn malformed_readouts(&self) -> u64 {
+        self.malformed_readouts
     }
 
     fn lock_sub_socket(&self) -> MutexGuard<'_, Option<ExclusiveSocket>> {
@@ -148,7 +172,7 @@ impl ZmqIpcBackend {
             .set_subscribe(b"")
             .map_err(|e| BackendError::InitializationError(format!("ZMQ subscribe: {e}")))?;
         socket
-            .set_rcvhwm(16)
+            .set_rcvhwm(READOUT_RCVHWM)
             .map_err(|e| BackendError::InitializationError(format!("ZMQ rcvhwm: {e}")))?;
         socket.connect(endpoint).map_err(|e| {
             BackendError::InitializationError(format!(
@@ -172,36 +196,48 @@ impl ZmqIpcBackend {
     }
 
     fn receive_readout(&mut self) -> Result<Vec<f32>, BackendError> {
-        let recv_result = {
-            let mut guard = self.lock_sub_socket();
-            let socket = guard.as_mut().ok_or_else(|| {
-                BackendError::CommunicationError("SUB socket not connected".to_string())
-            })?;
-            socket.recv_bytes_dontwait()
-        };
+        let mut newest = None;
+        loop {
+            let recv_result = {
+                let mut guard = self.lock_sub_socket();
+                let socket = guard.as_mut().ok_or_else(|| {
+                    BackendError::CommunicationError("SUB socket not connected".to_string())
+                })?;
+                socket.recv_bytes_dontwait()
+            };
 
-        match recv_result {
-            Ok(buf) if buf.len() >= 8 && (buf.len() - 8).is_multiple_of(4) => {
-                self.tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
-                let num_floats = (buf.len() - 8) / 4;
-                self.last_readout.resize(num_floats, 0.0);
-                for i in 0..num_floats {
-                    let off = 8 + i * 4;
-                    self.last_readout[i] =
-                        f32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            match recv_result {
+                Ok(buf) if buf.len() >= 8 && (buf.len() - 8).is_multiple_of(4) => {
+                    if newest.is_some() {
+                        self.skipped_readouts = self.skipped_readouts.saturating_add(1);
+                    }
+                    let tick = i64::from_le_bytes(buf[0..8].try_into().unwrap());
+                    let num_floats = (buf.len() - 8) / 4;
+                    let mut readout = Vec::with_capacity(num_floats);
+                    for i in 0..num_floats {
+                        let off = 8 + i * 4;
+                        readout.push(f32::from_le_bytes(buf[off..off + 4].try_into().unwrap()));
+                    }
+                    newest = Some((tick, readout));
+                }
+                Ok(buf) => {
+                    self.malformed_readouts = self.malformed_readouts.saturating_add(1);
+                    eprintln!("[zmq-ipc] Unexpected packet size: {} bytes", buf.len());
+                }
+                Err(zmq::Error::EAGAIN) => {
+                    break;
+                }
+                Err(e) => {
+                    return Err(BackendError::CommunicationError(format!(
+                        "ZMQ recv failed: {e}"
+                    )));
                 }
             }
-            Ok(buf) => {
-                eprintln!("[zmq-ipc] Unexpected packet size: {} bytes", buf.len());
-            }
-            Err(zmq::Error::EAGAIN) => {
-                // No new packet available — return cached readout.
-            }
-            Err(e) => {
-                return Err(BackendError::CommunicationError(format!(
-                    "ZMQ recv failed: {e}"
-                )));
-            }
+        }
+
+        if let Some((tick, readout)) = newest {
+            self.tick = tick;
+            self.last_readout = readout;
         }
 
         Ok(self.last_readout.clone())
@@ -278,6 +314,8 @@ impl IpcBackend for ZmqIpcBackend {
     fn reset(&mut self) -> Result<(), BackendError> {
         self.last_readout.clear();
         self.tick = 0;
+        self.skipped_readouts = 0;
+        self.malformed_readouts = 0;
         self.initialized = false;
         *self.lock_sub_socket() = None;
         println!("[zmq-ipc] Readout cache reset; will re-initialize on next call");
@@ -351,6 +389,28 @@ mod tests {
         buf
     }
 
+    fn connected_pub_sub() -> (zmq::Socket, ZmqIpcBackend) {
+        let endpoint = unique_test_endpoint();
+        let context = zmq::Context::new();
+        let publisher = context.socket(zmq::PUB).unwrap();
+        publisher.bind(&endpoint).unwrap();
+
+        let mut backend = ZmqIpcBackend::new();
+        backend.initialize_at(&endpoint).unwrap();
+
+        // PUB/SUB subscriptions propagate asynchronously. A warm-up loop
+        // makes the burst assertions independent of the slow-joiner window.
+        for _ in 0..100 {
+            publisher.send(make_packet(1, &[1.0]), 0).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            backend.process_batch(&[]).unwrap();
+            if backend.tick() == 1 {
+                return (publisher, backend);
+            }
+        }
+        panic!("ZMQ subscription did not become ready");
+    }
+
     #[test]
     fn parse_dynamic_packet() {
         let readout: Vec<f32> = (0..20).map(|i| i as f32 * 0.1).collect();
@@ -407,6 +467,50 @@ mod tests {
 
         assert_eq!(b.last_readout, initial_readout);
         assert_eq!(b.tick, initial_tick);
+    }
+
+    #[test]
+    fn process_batch_drains_beyond_hwm_to_newest_accepted_frame() {
+        let (publisher, mut backend) = connected_pub_sub();
+        let packet_count = READOUT_RCVHWM as i64 * 4;
+
+        for tick in 2..=packet_count + 1 {
+            publisher
+                .send(make_packet(tick, &[tick as f32]), 0)
+                .unwrap();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let output = backend.process_batch(&[]).unwrap();
+        let newest_accepted_tick = backend.tick();
+        assert!(newest_accepted_tick > 1);
+        assert_eq!(output, vec![newest_accepted_tick as f32]);
+        assert!(backend.skipped_readouts() > 0);
+
+        // The first call drained every frame accepted by the SUB socket. A
+        // second call therefore observes EAGAIN and leaves all state intact.
+        let skipped = backend.skipped_readouts();
+        assert_eq!(backend.process_batch(&[]).unwrap(), output);
+        assert_eq!(backend.tick(), newest_accepted_tick);
+        assert_eq!(backend.skipped_readouts(), skipped);
+    }
+
+    #[test]
+    fn malformed_frame_in_drained_burst_is_counted_and_not_applied() {
+        let (publisher, mut backend) = connected_pub_sub();
+        let skipped_before = backend.skipped_readouts();
+        let malformed_before = backend.malformed_readouts();
+        publisher.send(make_packet(2, &[2.0]), 0).unwrap();
+        publisher
+            .send([0xde, 0xad, 0xbe, 0xef].as_slice(), 0)
+            .unwrap();
+        publisher.send(make_packet(3, &[3.0]), 0).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        assert_eq!(backend.process_batch(&[]).unwrap(), vec![3.0]);
+        assert_eq!(backend.tick(), 3);
+        assert_eq!(backend.skipped_readouts() - skipped_before, 1);
+        assert_eq!(backend.malformed_readouts() - malformed_before, 1);
     }
 
     #[test]
