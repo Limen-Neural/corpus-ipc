@@ -52,33 +52,41 @@ This document is repository-owned and intentionally stays **out of** the
 
 ## Dependency-graph contributors (per feature path)
 
-Unique crate counts from `cargo tree` (normal edges only), deduplicated:
+Unique crate counts from `cargo tree` (normal edges only), deduplicated by
+crate name. The `sed 's/ v.*//'` step strips the version suffix (and `cargo
+tree`'s `(*)` "subtree already shown" markers) so a crate that appears more than
+once collapses to a single name before `sort -u` counts it:
 
 ```bash
-cargo tree --no-default-features --edges normal --locked --prefix none | sort -u | grep -v '^$' | wc -l
-cargo tree --features server      --edges normal --locked --prefix none | sort -u | grep -v '^$' | wc -l
-cargo tree --features zmq         --edges normal --locked --prefix none | sort -u | grep -v '^$' | wc -l
-cargo tree --all-features         --edges normal --locked --prefix none | sort -u | grep -v '^$' | wc -l
+cargo tree --no-default-features --edges normal --locked --prefix none | sed 's/ v.*//' | sort -u | grep -v '^$' | wc -l
+cargo tree --features server      --edges normal --locked --prefix none | sed 's/ v.*//' | sort -u | grep -v '^$' | wc -l
+cargo tree --features zmq         --edges normal --locked --prefix none | sed 's/ v.*//' | sort -u | grep -v '^$' | wc -l
+cargo tree --all-features         --edges normal --locked --prefix none | sed 's/ v.*//' | sort -u | grep -v '^$' | wc -l
 ```
 
 | Path | Command (features) | Unique normal-edge crates |
 | --- | --- | --- |
-| default (no-default) | `--no-default-features` | 17 |
-| server | `--features server` | 59 |
-| zmq | `--features zmq` | 21 |
-| all-features | `--all-features` | 62 |
+| default (no-default) | `--no-default-features` | 14 |
+| server | `--features server` | 47 |
+| zmq | `--features zmq` | 18 |
+| all-features | `--all-features` | 50 |
+
+The 14 crates in the default (no-default-features) normal-edge graph are:
+`corpus-ipc`, `itoa`, `memchr`, `proc-macro2`, `quote`, `serde`, `serde_core`,
+`serde_derive`, `serde_json`, `syn`, `thiserror`, `thiserror-impl`,
+`unicode-ident`, `zmij`.
 
 Observations:
 
 - **default** is deliberately lean: `serde`, `serde_json` (+ `raw_value`
   support), `thiserror`, and their proc-macro/build deps. No `axum`, `tokio`,
   `tower`, or `zmq`.
-- **server** adds the Axum/Tokio/Tower HTTP stack (+42 crates over default) and
+- **server** adds the Axum/Tokio/Tower HTTP stack (+33 crates over default) and
   dominates the *crate-count* dimension.
 - **zmq** adds only the vendored ZeroMQ FFI chain (`zmq`, `zmq-sys`, `libc`,
-  `zeromq-src` build deps) for +4 crates, but its cost is **native C++
-  compilation**, not crate count (see build timings).
-- **all-features** = server ∪ zmq = 62 crates.
+  `bitflags`) for +4 crates, but its cost is **native C++ compilation**, not
+  crate count (see build timings).
+- **all-features** = server ∪ zmq = 50 crates.
 
 ### Feature-boundary assertion
 
@@ -215,7 +223,7 @@ will differ and must be measured separately.
 cargo fetch --locked                       # prime registry cache once
 # crate counts
 for f in "--no-default-features" "--features server" "--features zmq" "--all-features"; do
-  cargo tree $f --edges normal --locked --prefix none | sort -u | grep -v '^$' | wc -l
+  cargo tree $f --edges normal --locked --prefix none | sed 's/ v.*//' | sort -u | grep -v '^$' | wc -l
 done
 # timing (append --ignore-rust-version only if the runner's rustc < MSRV 1.98.1)
 cargo clean && cargo build --all-features --locked --timings   # HTML under target/cargo-timings (gitignored)
