@@ -109,7 +109,7 @@ fn golden_malformed_frames_rejected_without_backend_mutation() {
             manifest
                 .fixtures
                 .iter()
-                .find(|f| f.name == "sixteen_float_72_byte")
+                .find(|f| f.name == "one_float_12_byte")
                 .unwrap(),
         );
         backend
