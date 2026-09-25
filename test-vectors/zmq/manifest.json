@@ -1,0 +1,53 @@
+{
+  "encoding": "hex",
+  "fixtures": [
+    {
+      "name": "empty_8_byte",
+      "file": "empty_8_byte.hex",
+      "sha256": "aae89fc0f03e2959ae4d701a80cc3915918c950b159f6abb6c92c1433b1a8534",
+      "length_bytes": 8
+    },
+    {
+      "name": "one_float_12_byte",
+      "file": "one_float_12_byte.hex",
+      "sha256": "0768c13ae52f45040331b4ea3e483fc7c8cee15b839fa12a1b9e0f5d15f76c9a",
+      "length_bytes": 12
+    },
+    {
+      "name": "sixteen_float_72_byte",
+      "file": "sixteen_float_72_byte.hex",
+      "sha256": "9845e7eb06803937aa0047c8714dac9f31871023c09ee5384b89c4af2112847a",
+      "length_bytes": 72
+    },
+    {
+      "name": "twenty_float_88_byte_historical_ambiguity",
+      "file": "twenty_float_88_byte_historical_ambiguity.hex",
+      "sha256": "84ff33725c7283044dd26dd710468f484df2ad1ff48ea9b6b22014c10a80aa7e",
+      "length_bytes": 88
+    },
+    {
+      "name": "truncated_5_byte",
+      "file": "truncated_5_byte.hex",
+      "sha256": "957b88b12730e646e0f33d3618b77dfa579e8231e3c59c7104be7165611c8027",
+      "length_bytes": 5
+    },
+    {
+      "name": "misaligned_9_byte",
+      "file": "misaligned_9_byte.hex",
+      "sha256": "1a35e2182b165fb8198e7bf8101b5c341380f2634d26148abe27c536985d038a",
+      "length_bytes": 9
+    },
+    {
+      "name": "readout_at_max_floats",
+      "file": "readout_at_max_floats.hex",
+      "sha256": "a02b575e7d8427da2dc424c812572a5a21724bc441a1c9e422e63970ac53249d",
+      "length_bytes": 4104
+    },
+    {
+      "name": "readout_max_plus_one_float",
+      "file": "readout_max_plus_one_float.hex",
+      "sha256": "83c10d1e1354cdebe17a58706b46ebf0211696bb8253e37299b917d0785de38c",
+      "length_bytes": 4108
+    }
+  ]
+}

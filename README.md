@@ -77,6 +77,24 @@ counts valid frames deliberately superseded while draining, and
 `malformed_readouts()` counts invalid-size frames ignored without updating the
 cache. Neither counter includes packets libzmq silently drops at its HWM.
 
+### ZMQ readout wire format and bounds
+
+Binary SUB packets are **`i64` tick (LE) + `N × f32` readouts (LE)**. An
+**88-byte** frame is tick + **20 floats**; length alone cannot distinguish that
+from a historical **16 readouts + 4 modulator scores** layout — the backend does
+not auto-split or reject all 88-byte packets on that basis (see
+`NeuromodulatorSnapshot` rustdoc).
+
+Before resizing the decoded cache, `parse_readout_packet` rejects truncated or
+misaligned payloads (`CommunicationError`) and counts above a cap
+(`InvalidInput`). Default cap: **1024 floats** (~4 KiB payload), override with
+`CORPUS_IPC_ZMQ_MAX_READOUT_FLOATS`. This bounds decoded memory only; libzmq
+still allocates the raw received buffer. Non-blocking recv returns the cached
+readout on `EAGAIN` (no error).
+
+Golden little-endian fixtures and a SHA-256 manifest live under
+`test-vectors/zmq/` (repo-only, not in the crates.io allow-list).
+
 ## Installation
 
 ```toml

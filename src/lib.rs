@@ -47,6 +47,8 @@ pub mod validation;
 
 #[cfg(feature = "zmq")]
 pub mod zmq_backend;
+#[cfg(feature = "zmq")]
+pub mod zmq_readout;
 
 /// Re-export the wire-schema compatibility envelope.
 pub use compatibility::{
