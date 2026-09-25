@@ -19,19 +19,23 @@
 #   full             Everything in `release-qualification`: adds a discrete
 #                    `cargo check --features zmq` (matching the `validate` job's
 #                    standalone zmq check), then all-targets / all-features
-#                    clippy, all-features tests, the ap-check canonical-encoding
-#                    test, rustdoc (-D warnings), and the package / publish
-#                    --dry-run pair (run once, last). The zmq and all-features
-#                    paths compile vendored ZeroMQ from C++, so this mode needs a
-#                    working C++ compiler.
+#                    clippy, all-features tests, a discrete `cargo test --features
+#                    server` (mirroring ci.yml `validate`), the ap-check
+#                    canonical-encoding test, rustdoc (-D warnings), and the
+#                    package / publish --dry-run pair (run once, last). The zmq
+#                    and all-features paths compile vendored ZeroMQ from C++, so
+#                    this mode needs a working C++ compiler.
 #
 #                    Full mode does NOT re-run ci.yml `validate`'s discrete
-#                    per-feature `cargo build --features server`, `cargo build
-#                    --all-features`, and `cargo test --features server` steps:
-#                    the all-features clippy/test phases are a strict superset
-#                    that compiles and tests every feature, so re-running the
-#                    per-feature builds would only repeat heavy work the issue
-#                    explicitly discourages without catching anything new.
+#                    per-feature `cargo build --features server` / `cargo build
+#                    --all-features` steps: the all-features clippy/test phases
+#                    compile every feature, so re-running those per-feature
+#                    builds would only repeat heavy work without catching
+#                    anything new. It DOES keep a discrete `cargo test --features
+#                    server`, because `--all-features` is not a strict superset
+#                    of it: src/bin/corpus_ipc_server.rs has a
+#                    `#[cfg(not(feature = "zmq"))]` branch that all-features
+#                    disables, so only the server-without-zmq test exercises it.
 #
 # Every cargo invocation uses --locked because Cargo.lock is tracked.
 #
@@ -45,6 +49,9 @@
 #   * OPT-IN only (via --jobs N or CARGO_BUILD_JOBS); default is unbounded/nproc.
 #   * applied ONLY to the heavy full-mode all-features phases (clippy/test/doc/
 #     package/publish), never to the fast path.
+# To keep that promise, CARGO_BUILD_JOBS is read into JOBS and then unset early,
+# so cargo cannot honor it implicitly on the fast-path check/tree commands; the
+# cap is re-applied solely through the explicit `--jobs N` on the heavy phases.
 # Capping the fast path would add no memory safety and only slow it down, so the
 # fast path always runs at full parallelism.
 # ---------------------------------------------------------------------------
@@ -70,9 +77,19 @@ set -Eeuo pipefail
 
 MODE="fast"
 # Empty means "let cargo use its default parallelism" (nproc). A positive value
-# is passed as `--jobs N` ONLY to the heavy full-mode phases. CARGO_BUILD_JOBS,
-# if exported, is honored by cargo natively; --jobs takes precedence when set.
+# is passed as `--jobs N` ONLY to the heavy full-mode phases. --jobs and
+# CARGO_BUILD_JOBS are equivalent ways to set this opt-in cap; --jobs takes
+# precedence when both are given.
+#
+# We seed JOBS from CARGO_BUILD_JOBS here, then `unset CARGO_BUILD_JOBS` below so
+# cargo never picks it up implicitly. Left set, cargo honors CARGO_BUILD_JOBS for
+# EVERY invocation -- including the fast-path `cargo check` / `cargo tree` -- which
+# would silently cap the fast path that this script promises is never capped.
+# After unsetting, the cap is re-applied ONLY via the explicit `${JOBS_ARGS[@]}`
+# (`--jobs N`) on the heavy full-mode phases, so both sources feed the same
+# opt-in cap and the fast path always runs at full nproc.
 JOBS="${CARGO_BUILD_JOBS:-}"
+unset CARGO_BUILD_JOBS
 RUN_FMT=1
 
 usage() {
@@ -89,13 +106,17 @@ Modes:
          zmq / --all-features):
            cargo check --features zmq --locked
            clippy --all-targets --all-features -D warnings,
-           test --all-features, test -p ap-check, rustdoc -D warnings,
+           test --all-features, test --features server, test -p ap-check,
+           rustdoc -D warnings,
            package --list, package, publish --dry-run.
 
 Options:
   --jobs N   Opt-in Cargo parallelism cap applied ONLY to the heavy full-mode
              all-features phases. Default: unbounded (nproc). The fast path is
-             never capped. Equivalent to exporting CARGO_BUILD_JOBS=N.
+             never capped. Equivalent to setting CARGO_BUILD_JOBS=N (both feed
+             the same opt-in cap; --jobs wins if both are set). CARGO_BUILD_JOBS
+             is consumed by this script and unset before any cargo runs, so it
+             never implicitly caps the fast path.
   --no-fmt   Skip the `cargo fmt --check` phase (fmt is a formatting gate, not a
              compile gate; it stays on by default to mirror CI).
   -h, --help Show this help.
@@ -184,8 +205,12 @@ on_error() {
     echo ""
     echo "xx FAILED in ${MODE} mode during phase ${PHASE_INDEX}/${PHASE_TOTAL}: ${CURRENT_PHASE}" >&2
     echo "xx exit code: ${code}" >&2
-    if [[ "$MODE" == "full" && "$CURRENT_PHASE" == *all-features* ]]; then
-        echo "xx note: --all-features compiles vendored ZeroMQ from C++ (zmq-sys)." >&2
+    # The zmq and all-features phases both compile vendored ZeroMQ from C++
+    # (zmq-sys). The discrete `cargo check --features zmq` runs BEFORE the
+    # all-features phases, so on a broken-C++ runner it is the first phase to
+    # fail; the hint must fire for it too, not only for *all-features*.
+    if [[ "$MODE" == "full" && ( "$CURRENT_PHASE" == *all-features* || "$CURRENT_PHASE" == *zmq* ) ]]; then
+        echo "xx note: the zmq / --all-features phases compile vendored ZeroMQ from C++ (zmq-sys)." >&2
         echo "xx       If this is a C++/cc-rs error (e.g. \"'string' file not found\")" >&2
         echo "xx       rather than a corpus-ipc code failure, retry with a working" >&2
         echo "xx       C++ compiler: CC=gcc CXX=g++ scripts/verify.sh --mode full" >&2
@@ -246,11 +271,11 @@ run_full() {
     # all-features qualification, then package/publish --dry-run ONCE at the end.
     # No `cargo clean` anywhere: artifacts are reused across phases.
     if [[ "$RUN_FMT" -eq 1 ]]; then
-        PHASE_TOTAL=12
+        PHASE_TOTAL=13
         banner "cargo fmt --check"
         cargo fmt --check
     else
-        PHASE_TOTAL=11
+        PHASE_TOTAL=12
     fi
 
     banner "cargo check --no-default-features --locked"
@@ -274,6 +299,14 @@ run_full() {
 
     banner "cargo test --all-features --locked"
     cargo test "${JOBS_ARGS[@]}" --all-features --locked
+
+    # Discrete server-feature test, mirroring ci.yml `validate`'s standalone
+    # `cargo test --features server` step. `--all-features` is NOT a strict
+    # superset here: src/bin/corpus_ipc_server.rs has a
+    # `#[cfg(not(feature = "zmq"))]` branch that all-features disables, so this
+    # phase is retained to cover the not(zmq) path all-features cannot exercise.
+    banner "cargo test --features server --locked"
+    cargo test "${JOBS_ARGS[@]}" --features server --locked
 
     banner "cargo test -p ap-check --locked"
     cargo test "${JOBS_ARGS[@]}" -p ap-check --locked

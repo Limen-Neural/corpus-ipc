@@ -28,9 +28,13 @@ Two modes:
   --dry-run --locked` run once at the end. It does not `cargo clean` between
   phases, so artifacts are reused. Full mode does **not** re-run `validate`'s
   discrete per-feature `cargo build --features server` / `cargo build
-  --all-features` / `cargo test --features server` steps: the all-features
-  clippy/test phases are a strict superset, so re-running the per-feature builds
-  would only repeat heavy work without catching anything they miss.
+  --all-features` steps: the all-features clippy/test phases compile every
+  feature, so re-running those per-feature builds would only repeat heavy work
+  without catching anything they miss. It **does** keep a discrete `cargo test
+  --features server --locked` (mirroring `validate`), because `--all-features`
+  is *not* a strict superset of it: `src/bin/corpus_ipc_server.rs` has a
+  `#[cfg(not(feature = "zmq"))]` branch that all-features disables, so only the
+  server-without-zmq test exercises that path.
 
 Each phase prints a labeled banner (`==> [full 5/12] ...`); any failure exits
 non-zero and names the failing phase. There are no error-swallowing constructs
@@ -45,9 +49,11 @@ CC=gcc CXX=g++ scripts/verify.sh --mode full
 
 Parallelism: the `--all-features`/`zmq` build is the parallelism-heavy phase
 (see `docs/compile-cost.md`: ~86.6 s at `-j1` vs ~15.8 s at `-j8` on an 8-core
-box). An **opt-in** cap (`--jobs N` or `CARGO_BUILD_JOBS=N`) is applied only to
-the heavy full-mode phases; the fast path always runs at full `nproc` and is
-never capped by default.
+box). An **opt-in** cap (`--jobs N` or `CARGO_BUILD_JOBS=N`, equivalent — `--jobs`
+wins if both are set) is applied only to the heavy full-mode phases; the fast
+path always runs at full `nproc` and is never capped. The script consumes
+`CARGO_BUILD_JOBS` and unsets it before any cargo runs, so it feeds only that
+opt-in cap and can never implicitly cap the C++-free fast path.
 
 Observed verification budget (environment-specific; measured on this sandbox's
 cargo/rustc 1.92.0, not the pinned-CI 1.98.1 toolchain — re-measure on the

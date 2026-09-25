@@ -39,13 +39,17 @@ zmq` (mirroring the CI `validate` job's standalone zmq check; needs C++),
 all-targets/all-features clippy, `cargo test --all-features`, `cargo test -p
 ap-check`, rustdoc `-D warnings`, and `cargo package` / `cargo publish
 --dry-run` (run once, last; no `cargo clean` between phases). Full mode relies on
-the all-features clippy/test phases as a superset rather than re-running CI's
-discrete per-feature `cargo build`/`cargo test` steps. Each phase prints a
+the all-features clippy/test phases instead of re-running CI's discrete
+per-feature `cargo build` steps, but keeps a discrete `cargo test --features
+server` (mirroring CI) because `--all-features` is *not* a strict superset of
+it: `corpus_ipc_server.rs` has a `#[cfg(not(feature = "zmq"))]` branch that
+all-features disables. Each phase prints a
 banner and any failure names the failing phase and exits non-zero — no error
 swallowing, no silent skips. The
 all-features/zmq build is the parallelism-heavy phase (`-j1` ~86.6 s vs `-j8`
-~15.8 s), so the jobs cap is opt-in and applied only there; the fast path is
-never capped. See [`docs/compile-cost.md`](docs/compile-cost.md) for the observed
+~15.8 s), so the jobs cap (`--jobs N` or the equivalent `CARGO_BUILD_JOBS=N`,
+which the script consumes and unsets before cargo runs) is opt-in and applied
+only there; the fast path is never capped. See [`docs/compile-cost.md`](docs/compile-cost.md) for the observed
 (environment-specific) verification budget. Prime the cache once with `cargo
 fetch --locked` to avoid redundant compilation; no provider-specific secrets are
 needed. The retained external Codex Cloud environment is a separate owner-applied
