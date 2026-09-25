@@ -380,17 +380,19 @@ mod tests {
 
     #[test]
     fn parse_dynamic_packet_via_production_ingest() {
-        let readout: Vec<f32> = (0..20).map(|i| i as f32 * 0.1).collect();
+        let max_cap = crate::zmq_readout::max_readout_float_limit();
+        let count = max_cap.clamp(1, 20);
+        let readout: Vec<f32> = (0..count).map(|i| i as f32 * 0.1).collect();
         let tick: i64 = 42_000;
         let buf = make_packet(tick, &readout);
 
         let mut b = ZmqIpcBackend::new();
         b.apply_readout_packet_for_tests(&buf)
-            .expect("valid 20-float frame");
+            .expect("valid dynamic frame within configured limit");
 
         assert_eq!(b.tick, tick);
-        assert_eq!(b.last_readout.len(), 20);
-        for (i, val) in readout.iter().enumerate().take(20) {
+        assert_eq!(b.last_readout.len(), count);
+        for (i, val) in readout.iter().enumerate().take(count) {
             assert!((b.last_readout[i] - val).abs() < 1e-5);
         }
     }
