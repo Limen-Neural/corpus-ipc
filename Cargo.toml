@@ -58,6 +58,15 @@ server = ["dep:axum", "dep:tokio"]
 name = "corpus_ipc_server"
 required-features = ["server"]
 
+[[test]]
+name = "zmq_golden_readout"
+path = "tests/zmq_golden_readout.rs"
+required-features = ["zmq"]
+
+[dev-dependencies]
+hex = "0.4"
+sha2 = "0.10"
+
 [package.metadata.docs.rs]
 # Default crate only. The `zmq` feature compiles vendored C++ via zmq-sys.
 all-features = false

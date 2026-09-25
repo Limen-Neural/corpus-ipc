@@ -4,9 +4,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::validation::{ProtocolLimits, Validate, ValidationError, check_range};
 
-/// 4-runtime snapshot decoded from the remote compute's 88-byte generic packet.
+/// Typed neuromodulator snapshot for JSON / explicit byte ingress.
 ///
-/// # Wire format (bytes 72–87 of the generic IPC packet)
+/// # Relationship to ZMQ SUB readouts
+///
+/// The ZMQ SUB readout backend (`ZmqIpcBackend`, feature `zmq`) treats an
+/// 88-byte binary frame as **tick + 20 `f32` values** and does **not**
+/// auto-split bytes `[72..88]` into four
+/// modulator scores. The layout below describes a **historical generic packet**
+/// interpretation used when callers explicitly slice scores (e.g.
+/// [`Self::from_scores`]) — not something the ZMQ subscriber infers from length
+/// alone, because 88 bytes is ambiguous between 20 readouts and 16 readouts +
+/// 4 modulators.
+///
+/// # Historical generic packet layout (bytes 72–87 when explicitly parsed)
 /// ```text
 /// [72..76]  dopamine       f32 LE   reward / learning-rate gate
 /// [76..80]  cortisol       f32 LE   stress / inhibition
@@ -70,7 +81,7 @@ impl TryFrom<NeuromodulatorSnapshotWire> for NeuromodulatorSnapshot {
 }
 
 impl NeuromodulatorSnapshot {
-    /// Parse from the 4 generic score floats in bytes `[72..88]` of a generic packet.
+    /// Parse from four explicit score floats (historical bytes `[72..88]` layout).
     ///
     /// Calls [`Validate::validate`] internally and returns `Err` if the decoded
     /// bytes are out of the documented ranges or non-finite. This keeps
