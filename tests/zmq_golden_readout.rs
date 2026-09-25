@@ -76,8 +76,15 @@ fn golden_valid_frames_match_parser_expectations() {
     assert_eq!(floats.len(), 16);
 
     let twenty = load_fixture_bytes(by_name("twenty_float_88_byte_historical_ambiguity"));
-    let (_, floats) = parse_readout_packet(&twenty, DEFAULT_MAX_READOUT_FLOATS).unwrap();
-    assert_eq!(floats.len(), 20);
+    let (tick, floats) = parse_readout_packet(&twenty, DEFAULT_MAX_READOUT_FLOATS).unwrap();
+    assert_eq!(tick, 20);
+    assert_eq!(
+        floats,
+        vec![
+            0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75,
+            4.0, 4.25, 4.5, 4.75,
+        ]
+    );
 
     let at_max = load_fixture_bytes(by_name("readout_at_max_floats"));
     let (_, floats) = parse_readout_packet(&at_max, DEFAULT_MAX_READOUT_FLOATS).unwrap();

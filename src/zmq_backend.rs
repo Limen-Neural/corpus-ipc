@@ -188,14 +188,22 @@ impl ZmqIpcBackend {
         Ok(())
     }
 
-    /// Apply one received packet using the same validation path as production recv.
-    fn ingest_readout_packet(&mut self, buf: &[u8]) -> Result<(), BackendError> {
-        let max_floats = max_readout_float_limit();
+    /// Apply one received packet using an explicit float cap.
+    fn ingest_readout_packet_with_limit(
+        &mut self,
+        buf: &[u8],
+        max_floats: usize,
+    ) -> Result<(), BackendError> {
         let (tick, readout) = parse_readout_packet(buf, max_floats)?;
         self.tick = tick;
         self.last_readout.clear();
         self.last_readout.extend_from_slice(&readout);
         Ok(())
+    }
+
+    /// Apply one received packet using the configured environment float cap.
+    fn ingest_readout_packet(&mut self, buf: &[u8]) -> Result<(), BackendError> {
+        self.ingest_readout_packet_with_limit(buf, max_readout_float_limit())
     }
 
     fn receive_readout(&mut self) -> Result<Vec<f32>, BackendError> {
@@ -226,6 +234,16 @@ impl ZmqIpcBackend {
     #[doc(hidden)]
     pub fn apply_readout_packet_for_tests(&mut self, buf: &[u8]) -> Result<(), BackendError> {
         self.ingest_readout_packet(buf)
+    }
+
+    /// Test/conformance hook: production ingest path with explicit float limit.
+    #[doc(hidden)]
+    pub fn apply_readout_packet_with_limit_for_tests(
+        &mut self,
+        buf: &[u8],
+        max_floats: usize,
+    ) -> Result<(), BackendError> {
+        self.ingest_readout_packet_with_limit(buf, max_floats)
     }
 
     /// Test/conformance hook: observe `(tick, readout cache)` without recv.
@@ -429,13 +447,19 @@ mod tests {
     }
 
     #[test]
-    fn over_limit_packet_is_invalid_input_not_communication() {
-        use crate::zmq_readout::parse_readout_packet;
-
+    fn over_limit_packet_is_invalid_input_without_mutating_state() {
         let max = 4;
         let buf = make_packet(1, &[0.0; 5]);
-        let err = parse_readout_packet(&buf, max).expect_err("five floats exceeds cap of four");
+        let mut b = ZmqIpcBackend::new();
+        b.last_readout = vec![1.0, 2.0];
+        b.tick = 100;
+        let before = b.readout_cache_snapshot_for_tests();
+
+        let err = b
+            .apply_readout_packet_with_limit_for_tests(&buf, max)
+            .expect_err("five floats exceeds cap of four");
         assert!(matches!(err, BackendError::InvalidInput(_)));
+        assert_eq!(b.readout_cache_snapshot_for_tests(), before);
     }
 
     #[test]
