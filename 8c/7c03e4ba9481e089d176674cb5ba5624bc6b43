@@ -1,0 +1,9 @@
+src/zmq_backend.rs
+  1432c013dc03497c 643,646-648,652,676-691
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8c7c03e4ba9481e089d176674cb5ba5624bc6b43",
+  "prompts": {}
+}
