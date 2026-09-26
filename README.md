@@ -63,6 +63,20 @@ Moving the backend to another thread is supported. `process_batch` still takes
 `&mut self`; concurrent process calls need an outer lock, which is how
 `corpus_ipc_server` uses `Arc<Mutex<Box<dyn IpcBackend>>>`.
 
+### ZMQ latest-value policy
+
+The ZMQ backend prefers **latest-value** semantics, not queued delivery.
+Its SUB socket uses a receive high-water mark (HWM) of 16 packets and does not
+enable `ZMQ_CONFLATE`. When the HWM is reached, libzmq silently drops further
+publications (it does not evict the oldest queued frames), so a slow consumer
+can still observe a stale head-of-queue after a burst. Each `process_batch`
+call keeps `DONTWAIT` semantics and drains under a message-count and time
+budget (then stops at `EAGAIN`), returning the newest valid frame seen in that
+bounded drain (or the cached readout if none arrived). `skipped_readouts()`
+counts valid frames deliberately superseded while draining, and
+`malformed_readouts()` counts invalid-size frames ignored without updating the
+cache. Neither counter includes packets libzmq silently drops at its HWM.
+
 ### ZMQ readout wire format and bounds
 
 Binary SUB packets are **`i64` tick (LE) + `N × f32` readouts (LE)**. An
