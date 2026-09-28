@@ -238,52 +238,54 @@ impl ZmqIpcBackend {
         self.ingest_readout_packet_with_limit(buf, max_readout_float_limit())
     }
 
+    fn drain_budget_exhausted(received: u32, started: Instant) -> bool {
+        if received >= RECEIVE_DRAIN_MAX_MESSAGES {
+            return true;
+        }
+        if received == 0 {
+            return false;
+        }
+        started.elapsed() >= RECEIVE_DRAIN_MAX_DURATION
+    }
+
+    fn try_recv_readout_packet(&self) -> Result<Option<Vec<u8>>, BackendError> {
+        let mut guard = self.lock_sub_socket();
+        let socket = guard.as_mut().ok_or_else(|| {
+            BackendError::CommunicationError("SUB socket not connected".to_string())
+        })?;
+        match socket.recv_bytes_dontwait() {
+            Ok(buf) => Ok(Some(buf)),
+            Err(zmq::Error::EAGAIN) => Ok(None),
+            Err(e) => Err(BackendError::CommunicationError(format!(
+                "ZMQ recv failed: {e}"
+            ))),
+        }
+    }
+
+    fn parse_received_readout(&mut self, buf: &[u8]) -> Result<(i64, Vec<f32>), BackendError> {
+        parse_readout_packet(buf, max_readout_float_limit()).inspect_err(|_| {
+            self.malformed_readouts = self.malformed_readouts.saturating_add(1);
+        })
+    }
+
     fn receive_readout(&mut self) -> Result<Vec<f32>, BackendError> {
         let mut newest = None;
         let started = Instant::now();
         let mut received = 0u32;
         loop {
-            if received >= RECEIVE_DRAIN_MAX_MESSAGES
-                || (received > 0 && started.elapsed() >= RECEIVE_DRAIN_MAX_DURATION)
-            {
+            if Self::drain_budget_exhausted(received, started) {
                 // Bound reached with the socket possibly still non-empty: keep
                 // the newest valid frame seen this call; leftover frames remain
                 // for a later process_batch (or are dropped by RCVHWM).
                 break;
             }
-            let recv_result = {
-                let mut guard = self.lock_sub_socket();
-                let socket = guard.as_mut().ok_or_else(|| {
-                    BackendError::CommunicationError("SUB socket not connected".to_string())
-                })?;
-                socket.recv_bytes_dontwait()
+            let Some(buf) = self.try_recv_readout_packet()? else {
+                break;
             };
-
-            match recv_result {
-                Ok(buf) => {
-                    received = received.saturating_add(1);
-                    let max_floats = max_readout_float_limit();
-                    match parse_readout_packet(&buf, max_floats) {
-                        Ok((tick, readout)) => {
-                            if newest.is_some() {
-                                self.skipped_readouts = self.skipped_readouts.saturating_add(1);
-                            }
-                            newest = Some((tick, readout));
-                        }
-                        Err(e) => {
-                            self.malformed_readouts = self.malformed_readouts.saturating_add(1);
-                            return Err(e);
-                        }
-                    }
-                }
-                Err(zmq::Error::EAGAIN) => {
-                    break;
-                }
-                Err(e) => {
-                    return Err(BackendError::CommunicationError(format!(
-                        "ZMQ recv failed: {e}"
-                    )));
-                }
+            received = received.saturating_add(1);
+            let parsed = self.parse_received_readout(&buf)?;
+            if newest.replace(parsed).is_some() {
+                self.skipped_readouts = self.skipped_readouts.saturating_add(1);
             }
         }
 
