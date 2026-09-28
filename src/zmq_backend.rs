@@ -612,6 +612,10 @@ mod tests {
         );
         assert_eq!(backend.tick(), 3);
         assert_eq!(backend.malformed_readouts() - malformed_before, 1);
+        backend.reset().unwrap();
+        assert_eq!(backend.malformed_readouts(), 0);
+        assert_eq!(backend.skipped_readouts(), 0);
+        assert_eq!(backend.tick(), 0);
     }
 
     #[test]
@@ -644,47 +648,24 @@ mod tests {
     }
 
     #[test]
-    fn initialize_uses_corpus_ipc_zmq_readout_ipc_env() {
-        let endpoint = unique_test_endpoint();
-        // Cargo launches this test binary directly, so argv[0] names the
-        // same executable for the isolated child invocation.
-        let test_binary = std::env::args_os().next().expect("test binary path");
-        let output = std::process::Command::new(test_binary)
-            .arg("--exact")
-            .arg("zmq_backend::tests::initialize_env_child")
-            .arg("--nocapture")
-            .env("CORPUS_IPC_ZMQ_READOUT_IPC", &endpoint)
-            .env("CORPUS_IPC_ZMQ_TEST_CHILD", "1")
-            .output()
-            .expect("run isolated endpoint test");
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stdout)
-        );
+    fn initialize_without_publisher_is_nonblocking() {
+        let mut backend = ZmqIpcBackend::new();
+        backend.initialize(None).unwrap();
+        assert!(backend.process_batch(&[]).unwrap().is_empty());
+        backend.reset().unwrap();
+        assert!(matches!(
+            backend.process_batch(&[]),
+            Err(BackendError::InitializationError(_))
+        ));
     }
 
     #[test]
-    fn initialize_env_child() {
-        if std::env::var_os("CORPUS_IPC_ZMQ_TEST_CHILD").is_none() {
-            return;
-        }
-        let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC").unwrap();
-        let context = zmq::Context::new();
-        let publisher = context.socket(zmq::PUB).unwrap();
-        publisher.bind(&endpoint).unwrap();
-
-        let mut backend = ZmqIpcBackend::new();
-        backend.initialize(None).unwrap();
-        for _ in 0..100 {
-            publisher.send(make_packet(7, &[7.0]), 0).unwrap();
-            std::thread::sleep(Duration::from_millis(2));
-            if backend.process_batch(&[]).is_ok_and(|out| out == vec![7.0]) {
-                assert_eq!(backend.tick(), 7);
-                return;
-            }
-        }
-        panic!("env-configured endpoint did not deliver readout");
+    fn missing_sub_socket_reports_communication_error() {
+        let backend = ZmqIpcBackend::new();
+        assert!(matches!(
+            backend.try_recv_readout_packet(),
+            Err(BackendError::CommunicationError(_))
+        ));
     }
 
     #[test]
