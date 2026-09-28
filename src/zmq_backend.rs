@@ -29,7 +29,8 @@
 //! - **Initialize**: creates, subscribes, and connects the SUB socket on the
 //!   calling thread, then stores it under the mutex. Idempotent after success.
 //! - **Process**: drains non-blocking `recv` calls (`zmq::DONTWAIT`) under the
-//!   mutex until `EAGAIN`, then returns the newest valid readout received.
+//!   mutex until `EAGAIN` or the 64-message / 5 ms budget, then returns the
+//!   newest valid readout received.
 //! - **Drop / reset**: `reset` drops the socket under the mutex. `Drop` of
 //!   the backend closes it through exclusive ownership (`zmq::Socket`'s
 //!   `Drop` calls `zmq_close`).
@@ -74,7 +75,8 @@ pub type ZmqRuntimeBackend = ZmqIpcBackend;
 /// Generic IPC backend — subscribes to the remote compute's ZMQ PUB socket and
 /// returns the latest compute readout available on each call. The SUB socket
 /// has a receive high-water mark of 16 packets. `process_batch` drains the
-/// socket until `EAGAIN` and applies only the last valid packet; use
+/// socket until `EAGAIN` or the 64-message / 5 ms budget and applies only the
+/// last valid packet; use
 /// [`ZmqIpcBackend::skipped_readouts`] to observe valid packets superseded by
 /// that latest-value policy. Drops performed internally by libzmq at the HWM
 /// are silent and therefore cannot be included in the counter.
@@ -171,7 +173,7 @@ impl ZmqIpcBackend {
         self.skipped_readouts
     }
 
-    /// Number of malformed readout frames ignored without changing the cache.
+    /// Number of malformed readout frames rejected without changing the cache.
     pub fn malformed_readouts(&self) -> u64 {
         self.malformed_readouts
     }
@@ -242,7 +244,7 @@ impl ZmqIpcBackend {
         let mut received = 0u32;
         loop {
             if received >= RECEIVE_DRAIN_MAX_MESSAGES
-                || started.elapsed() >= RECEIVE_DRAIN_MAX_DURATION
+                || (received > 0 && started.elapsed() >= RECEIVE_DRAIN_MAX_DURATION)
             {
                 // Bound reached with the socket possibly still non-empty: keep
                 // the newest valid frame seen this call; leftover frames remain
@@ -268,15 +270,10 @@ impl ZmqIpcBackend {
                             }
                             newest = Some((tick, readout));
                         }
-                        Err(BackendError::CommunicationError(e)) => {
+                        Err(e) => {
                             self.malformed_readouts = self.malformed_readouts.saturating_add(1);
-                            eprintln!("[zmq-ipc] Malformed packet framing: {e}");
+                            return Err(e);
                         }
-                        Err(BackendError::InvalidInput(e)) => {
-                            self.malformed_readouts = self.malformed_readouts.saturating_add(1);
-                            eprintln!("[zmq-ipc] Over-limit packet ignored: {e}");
-                        }
-                        Err(e) => return Err(e),
                     }
                 }
                 Err(zmq::Error::EAGAIN) => {
@@ -334,7 +331,10 @@ impl IpcBackend for ZmqIpcBackend {
     /// and returns the latest packet or cached value.
     ///
     /// # Errors
-    /// Returns `InitializationError` if the SUB socket is not connected.
+    /// Returns `InitializationError` if the SUB socket is not connected,
+    /// `CommunicationError` for malformed framing or receive failure, and
+    /// `InvalidInput` for a readout above the configured float limit. A
+    /// rejected frame leaves the cached readout unchanged.
     fn process_batch(&mut self, _inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
         if !self.initialized {
             return Err(BackendError::InitializationError(
@@ -555,30 +555,32 @@ mod tests {
     fn process_batch_drains_beyond_hwm_to_newest_accepted_frame() {
         let (publisher, mut backend) = connected_pub_sub();
         let packet_count = READOUT_RCVHWM as i64 * 4;
+        let skipped_before = backend.skipped_readouts();
 
         for tick in 2..=packet_count + 1 {
             publisher
                 .send(make_packet(tick, &[tick as f32]), 0)
                 .unwrap();
         }
-        std::thread::sleep(Duration::from_millis(50));
-
-        let output = backend.process_batch(&[]).unwrap();
+        assert!(
+            wait_until(Duration::from_millis(500), || {
+                backend.process_batch(&[]).unwrap();
+                backend.tick() > 1 && backend.skipped_readouts() > skipped_before
+            }),
+            "timed out waiting for a burst with superseded readouts"
+        );
+        let output = backend.last_readout.clone();
         let newest_accepted_tick = backend.tick();
         assert!(newest_accepted_tick > 1);
         assert_eq!(output, vec![newest_accepted_tick as f32]);
         assert!(backend.skipped_readouts() > 0);
 
-        // The first call drained every frame accepted by the SUB socket. A
-        // second call therefore observes EAGAIN and leaves all state intact.
-        let skipped = backend.skipped_readouts();
-        assert_eq!(backend.process_batch(&[]).unwrap(), output);
-        assert_eq!(backend.tick(), newest_accepted_tick);
-        assert_eq!(backend.skipped_readouts(), skipped);
+        // Delivery is asynchronous, so later calls may still see frames that
+        // had not reached the SUB socket during the first bounded drain.
     }
 
     #[test]
-    fn malformed_frame_in_drained_burst_is_counted_and_not_applied() {
+    fn malformed_frame_in_drained_burst_fails_closed_without_applying_cache() {
         let (publisher, mut backend) = connected_pub_sub();
         let malformed_before = backend.malformed_readouts();
         publisher.send(make_packet(2, &[2.0]), 0).unwrap();
@@ -587,14 +589,49 @@ mod tests {
             .unwrap();
         publisher.send(make_packet(3, &[3.0]), 0).unwrap();
         assert!(
-            wait_until(Duration::from_millis(200), || {
-                let out = backend.process_batch(&[]).unwrap();
-                out == vec![3.0] && backend.tick() == 3
+            wait_until(Duration::from_millis(500), || {
+                let before = backend.readout_cache_snapshot_for_tests();
+                match backend.process_batch(&[]) {
+                    Err(BackendError::CommunicationError(_)) => {
+                        assert_eq!(backend.readout_cache_snapshot_for_tests(), before);
+                        true
+                    }
+                    Ok(_) => false,
+                    Err(e) => panic!("unexpected error: {e:?}"),
+                }
             }),
-            "timed out waiting for malformed+tick-3 burst"
+            "timed out waiting for malformed frame"
+        );
+        assert!(
+            wait_until(Duration::from_millis(500), || {
+                backend.process_batch(&[]).unwrap() == vec![3.0]
+            }),
+            "timed out waiting for tick-3 frame"
         );
         assert_eq!(backend.tick(), 3);
         assert_eq!(backend.malformed_readouts() - malformed_before, 1);
+    }
+
+    #[test]
+    fn over_limit_frame_in_drained_burst_fails_closed() {
+        let (publisher, mut backend) = connected_pub_sub();
+        let before = backend.readout_cache_snapshot_for_tests();
+        let max_floats = max_readout_float_limit();
+        publisher
+            .send(make_packet(2, &vec![0.0; max_floats + 1]), 0)
+            .unwrap();
+        assert!(
+            wait_until(Duration::from_millis(500), || {
+                match backend.process_batch(&[]) {
+                    Err(BackendError::InvalidInput(_)) => true,
+                    Ok(_) => false,
+                    Err(e) => panic!("unexpected error: {e:?}"),
+                }
+            }),
+            "timed out waiting for over-limit frame"
+        );
+        assert_eq!(backend.readout_cache_snapshot_for_tests(), before);
+        assert_eq!(backend.malformed_readouts(), 1);
     }
 
     #[test]
@@ -607,10 +644,27 @@ mod tests {
     #[test]
     fn initialize_uses_corpus_ipc_zmq_readout_ipc_env() {
         let endpoint = unique_test_endpoint();
-        // SAFETY: ZMQ integration tests run serially; no concurrent env access.
-        unsafe {
-            std::env::set_var("CORPUS_IPC_ZMQ_READOUT_IPC", &endpoint);
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("zmq_backend::tests::initialize_env_child")
+            .arg("--nocapture")
+            .env("CORPUS_IPC_ZMQ_READOUT_IPC", &endpoint)
+            .env("CORPUS_IPC_ZMQ_TEST_CHILD", "1")
+            .output()
+            .expect("run isolated endpoint test");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+
+    #[test]
+    fn initialize_env_child() {
+        if std::env::var_os("CORPUS_IPC_ZMQ_TEST_CHILD").is_none() {
+            return;
         }
+        let endpoint = std::env::var("CORPUS_IPC_ZMQ_READOUT_IPC").unwrap();
         let context = zmq::Context::new();
         let publisher = context.socket(zmq::PUB).unwrap();
         publisher.bind(&endpoint).unwrap();

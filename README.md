@@ -74,8 +74,9 @@ call keeps `DONTWAIT` semantics and drains under a message-count and time
 budget (then stops at `EAGAIN`), returning the newest valid frame seen in that
 bounded drain (or the cached readout if none arrived). `skipped_readouts()`
 counts valid frames deliberately superseded while draining, and
-`malformed_readouts()` counts invalid-size frames ignored without updating the
-cache. Neither counter includes packets libzmq silently drops at its HWM.
+`malformed_readouts()` counts malformed or over-limit frames rejected with
+`BackendError` without updating the cache. Neither counter includes packets
+libzmq silently drops at its HWM.
 
 ### ZMQ readout wire format and bounds
 
