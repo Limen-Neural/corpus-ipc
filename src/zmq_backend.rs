@@ -646,7 +646,10 @@ mod tests {
     #[test]
     fn initialize_uses_corpus_ipc_zmq_readout_ipc_env() {
         let endpoint = unique_test_endpoint();
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
+        // Cargo launches this test binary directly, so argv[0] names the
+        // same executable for the isolated child invocation.
+        let test_binary = std::env::args_os().next().expect("test binary path");
+        let output = std::process::Command::new(test_binary)
             .arg("--exact")
             .arg("zmq_backend::tests::initialize_env_child")
             .arg("--nocapture")
