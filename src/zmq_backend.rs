@@ -733,6 +733,17 @@ mod tests {
     }
 
     #[test]
+    fn drain_budget_always_allows_first_receive_attempt() {
+        let expired = Instant::now() - RECEIVE_DRAIN_MAX_DURATION;
+        assert!(!ZmqIpcBackend::drain_budget_exhausted(0, expired));
+        assert!(ZmqIpcBackend::drain_budget_exhausted(1, expired));
+        assert!(ZmqIpcBackend::drain_budget_exhausted(
+            RECEIVE_DRAIN_MAX_MESSAGES,
+            Instant::now()
+        ));
+    }
+
+    #[test]
     fn over_limit_packet_is_invalid_input_without_mutating_state() {
         let max = 4;
         let buf = make_packet(1, &[0.0; 5]);
