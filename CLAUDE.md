@@ -17,6 +17,44 @@ cargo clippy --all-targets -- -D warnings             # CI uses --all-features t
 cargo doc --no-deps
 ```
 
+### Repository verification script
+
+`scripts/verify.sh` runs the repo's checks and mirrors the CI gates in
+`.github/workflows/ci.yml` (it never weakens them). Every cargo command uses
+`--locked`. It is repo-only tooling and stays out of the crates.io package
+(confirm with `cargo package --list --locked`).
+
+```bash
+scripts/verify.sh                # fast mode (default): fmt + default/server check + tree boundary; NO C++ needed
+scripts/verify.sh --no-fmt       # fast mode, skip the fmt phase
+scripts/verify.sh --mode full    # full release/CI qualification; NEEDS a C++ compiler for --all-features
+CC=gcc CXX=g++ scripts/verify.sh --mode full   # if clang can't find libstdc++
+scripts/verify.sh --mode full --jobs 4         # opt-in Cargo jobs cap (heavy all-features phases only)
+```
+
+Fast mode = `cargo fmt --check`, `cargo check --no-default-features`, `cargo
+check --features server`, and the boundary assertion that the default tree
+excludes axum/tokio/tower/zmq. Full mode adds a discrete `cargo check --features
+zmq` (mirroring the CI `validate` job's standalone zmq check; needs C++),
+all-targets/all-features clippy, `cargo test --all-features`, `cargo test -p
+ap-check`, rustdoc `-D warnings`, and `cargo package` / `cargo publish
+--dry-run` (run once, last; no `cargo clean` between phases). Full mode relies on
+the all-features clippy/test phases instead of re-running CI's discrete
+per-feature `cargo build` steps, but keeps a discrete `cargo test --features
+server` (mirroring CI) because `--all-features` is *not* a strict superset of
+it: `corpus_ipc_server.rs` has a `#[cfg(not(feature = "zmq"))]` branch that
+all-features disables. Each phase prints a
+banner and any failure names the failing phase and exits non-zero — no error
+swallowing, no silent skips. The
+all-features/zmq build is the parallelism-heavy phase (`-j1` ~86.6 s vs `-j8`
+~15.8 s), so the jobs cap (`--jobs N` or the equivalent `CARGO_BUILD_JOBS=N`,
+which the script consumes and unsets before cargo runs) is opt-in and applied
+only there; the fast path is never capped. See [`docs/compile-cost.md`](docs/compile-cost.md) for the observed
+(environment-specific) verification budget. Prime the cache once with `cargo
+fetch --locked` to avoid redundant compilation; no provider-specific secrets are
+needed. The retained external Codex Cloud environment is a separate owner-applied
+manual step, not something this repo change recreates or tested.
+
 CI (`.github/workflows/ci.yml`) matrices Build & Test on Ubuntu, macOS, and
 Windows (`fail-fast: false`). Format, the ZeroMQ feature, and `--all-features`
 stay Linux-only. It also asserts that `cargo tree --no-default-features` keeps
