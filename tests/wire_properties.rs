@@ -423,38 +423,37 @@ proptest! {
     }
 }
 
-/// Directly constructed non-finite `f32` inputs are rejected by the canonical
-/// encoder's pre-serialization validation — one case per float-bearing field.
+fn assert_non_finite_rejected(cases: Vec<IpcMessage>) {
+    for msg in cases {
+        assert!(
+            encode_canonical_ipc_message(&msg).is_err(),
+            "non-finite input must fail canonical validation: {msg:?}"
+        );
+    }
+}
+
+/// Input-side variants: directly constructed non-finite `f32` inputs are
+/// rejected by the canonical encoder's pre-serialization validation.
 #[test]
-fn canonical_encoder_rejects_non_finite_inputs() {
-    let cases: Vec<IpcMessage> = vec![
+fn canonical_encoder_rejects_non_finite_input_variants() {
+    assert_non_finite_rejected(vec![
         IpcMessage::Loss(f32::NAN),
         IpcMessage::Loss(f32::INFINITY),
         IpcMessage::Loss(f32::NEG_INFINITY),
         IpcMessage::Spikes(SpikeBatch {
-            session_id: None,
-            batch_id: 0,
-            timestamp: 0,
             spikes: vec![SpikeEvent {
-                channel: 0,
-                time: 0,
                 strength: f32::NAN,
+                ..SpikeEvent::default()
             }],
-            metadata: None,
+            ..SpikeBatch::default()
         }),
         IpcMessage::Embeddings(EmbeddingBatch {
-            session_id: None,
-            batch_id: 0,
             embedding: vec![0.0, f32::INFINITY],
-            sequence_length: 0,
+            ..EmbeddingBatch::default()
         }),
         IpcMessage::Stimuli(StimulusBatch {
-            session_id: None,
-            batch_id: 0,
-            timestamp: 0,
             values: vec![f32::NEG_INFINITY],
-            valid_mask: None,
-            metadata: None,
+            ..StimulusBatch::default()
         }),
         IpcMessage::Neuromodulators(NeuromodulatorSnapshot {
             tick: 0,
@@ -467,6 +466,13 @@ fn canonical_encoder_rejects_non_finite_inputs() {
             session_id: None,
             config: HashMap::from([("k".to_string(), ConfigValue::Float(f32::NAN))]),
         }),
+    ]);
+}
+
+/// Output-side variants get the same pre-serialization rejection.
+#[test]
+fn canonical_encoder_rejects_non_finite_output_variants() {
+    assert_non_finite_rejected(vec![
         IpcMessage::GradientUpdate(GradientBatch {
             session_id: "s".to_string(),
             batch_id: 0,
@@ -485,13 +491,7 @@ fn canonical_encoder_rejects_non_finite_inputs() {
                 last_spike_time: 0,
             }],
         }),
-    ];
-    for msg in cases {
-        assert!(
-            encode_canonical_ipc_message(&msg).is_err(),
-            "non-finite input must fail canonical validation: {msg:?}"
-        );
-    }
+    ]);
 }
 
 /// Above the f32 exact-integer boundary, `Integer` still normalizes to `Float`
