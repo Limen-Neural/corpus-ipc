@@ -100,30 +100,23 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
+type Vector = (&'static str, &'static str, IpcMessage);
+
 /// Positive (canonical, generated) vectors: file name, `IpcMessage` variant
-/// name, and the message the canonical encoder emits bytes for.
-fn positive_vectors() -> Vec<(&'static str, &'static str, IpcMessage)> {
-    let mut unicode_meta = BatchMetadata {
-        processing_latency_ns: Some(42),
-        source: Some("encoder-Ω".into()),
-        custom: HashMap::new(),
-    };
-    unicode_meta.custom.insert("café".into(), "naïve-Ω".into());
-    unicode_meta
-        .custom
-        .insert("日本語".into(), "spike-viz".into());
+/// name, and the message the canonical encoder emits bytes for. Split into
+/// per-group builders so no single function grows unwieldy.
+fn positive_vectors() -> Vec<Vector> {
+    [
+        control_vectors(),
+        spike_vectors(),
+        input_vectors(),
+        config_vectors(),
+        output_vectors(),
+    ]
+    .concat()
+}
 
-    let mut config = HashMap::new();
-    config.insert("alpha".into(), ConfigValue::Boolean(true));
-    config.insert("depth".into(), ConfigValue::Float(0.25));
-    config.insert("mode".into(), ConfigValue::String("replay".into()));
-    config.insert("tau".into(), ConfigValue::FloatArray(vec![0.1, 0.2, 0.3]));
-    config.insert("zeta".into(), ConfigValue::Float(7.0));
-
-    let mut signed_zero = HashMap::new();
-    signed_zero.insert("neg".into(), ConfigValue::Float(-0.0));
-    signed_zero.insert("pos".into(), ConfigValue::Float(0.0));
-
+fn control_vectors() -> Vec<Vector> {
     vec![
         ("ping", "Ping", IpcMessage::Ping),
         ("shutdown", "Shutdown", IpcMessage::Shutdown),
@@ -133,6 +126,11 @@ fn positive_vectors() -> Vec<(&'static str, &'static str, IpcMessage)> {
             IpcMessage::TrainingComplete,
         ),
         ("loss", "Loss", IpcMessage::Loss(0.1)),
+    ]
+}
+
+fn spike_vectors() -> Vec<Vector> {
+    vec![
         (
             "spikes",
             "Spikes",
@@ -159,6 +157,61 @@ fn positive_vectors() -> Vec<(&'static str, &'static str, IpcMessage)> {
                 }),
             }),
         ),
+        (
+            "boundaries",
+            "Spikes",
+            // Representable boundaries: integer extremes that stay exact on
+            // the wire (Rust `u*`/`i*` encode as JSON integers, not f32).
+            IpcMessage::Spikes(SpikeBatch {
+                session_id: None,
+                batch_id: u64::MAX,
+                timestamp: u64::MAX,
+                spikes: vec![SpikeEvent {
+                    channel: u16::MAX,
+                    time: u32::MAX,
+                    strength: f32::MAX,
+                }],
+                metadata: None,
+            }),
+        ),
+        (
+            "empty_spikes",
+            "Spikes",
+            IpcMessage::Spikes(SpikeBatch {
+                session_id: None,
+                batch_id: 0,
+                timestamp: 0,
+                spikes: vec![],
+                metadata: None,
+            }),
+        ),
+        ("unicode_metadata", "Spikes", unicode_spikes_message()),
+    ]
+}
+
+fn unicode_spikes_message() -> IpcMessage {
+    let mut custom = HashMap::new();
+    custom.insert("café".into(), "naïve-Ω".into());
+    custom.insert("日本語".into(), "spike-viz".into());
+    IpcMessage::Spikes(SpikeBatch {
+        session_id: Some("séssion-日本語".into()),
+        batch_id: 55,
+        timestamp: 1_700_002_000,
+        spikes: vec![SpikeEvent {
+            channel: 1,
+            time: 2,
+            strength: 0.5,
+        }],
+        metadata: Some(BatchMetadata {
+            processing_latency_ns: Some(42),
+            source: Some("encoder-Ω".into()),
+            custom,
+        }),
+    })
+}
+
+fn input_vectors() -> Vec<Vector> {
+    vec![
         (
             "embeddings",
             "Embeddings",
@@ -205,14 +258,50 @@ fn positive_vectors() -> Vec<(&'static str, &'static str, IpcMessage)> {
                 tempo: 1.0,
             }),
         ),
+    ]
+}
+
+fn config_vectors() -> Vec<Vector> {
+    vec![
+        ("config_update", "ConfigUpdate", config_update_message()),
         (
-            "config_update",
+            "empty_collections",
             "ConfigUpdate",
+            // Legal empty collections must stay legal on the wire.
             IpcMessage::ConfigUpdate(ConfigPayload {
-                session_id: Some("sess-1".into()),
-                config,
+                session_id: None,
+                config: HashMap::new(),
             }),
         ),
+        ("signed_zero", "ConfigUpdate", signed_zero_message()),
+    ]
+}
+
+fn config_update_message() -> IpcMessage {
+    let mut config = HashMap::new();
+    config.insert("alpha".into(), ConfigValue::Boolean(true));
+    config.insert("depth".into(), ConfigValue::Float(0.25));
+    config.insert("mode".into(), ConfigValue::String("replay".into()));
+    config.insert("tau".into(), ConfigValue::FloatArray(vec![0.1, 0.2, 0.3]));
+    config.insert("zeta".into(), ConfigValue::Float(7.0));
+    IpcMessage::ConfigUpdate(ConfigPayload {
+        session_id: Some("sess-1".into()),
+        config,
+    })
+}
+
+fn signed_zero_message() -> IpcMessage {
+    let mut config = HashMap::new();
+    config.insert("neg".into(), ConfigValue::Float(-0.0));
+    config.insert("pos".into(), ConfigValue::Float(0.0));
+    IpcMessage::ConfigUpdate(ConfigPayload {
+        session_id: None,
+        config,
+    })
+}
+
+fn output_vectors() -> Vec<Vector> {
+    vec![
         (
             "gradient_update",
             "GradientUpdate",
@@ -251,66 +340,6 @@ fn positive_vectors() -> Vec<(&'static str, &'static str, IpcMessage)> {
                         last_spike_time: 2_000,
                     },
                 ],
-            }),
-        ),
-        (
-            "boundaries",
-            "Spikes",
-            // Representable boundaries: integer extremes that stay exact on
-            // the wire (Rust `u*`/`i*` encode as JSON integers, not f32).
-            IpcMessage::Spikes(SpikeBatch {
-                session_id: None,
-                batch_id: u64::MAX,
-                timestamp: u64::MAX,
-                spikes: vec![SpikeEvent {
-                    channel: u16::MAX,
-                    time: u32::MAX,
-                    strength: f32::MAX,
-                }],
-                metadata: None,
-            }),
-        ),
-        (
-            "empty_collections",
-            "ConfigUpdate",
-            // Legal empty collections must stay legal on the wire.
-            IpcMessage::ConfigUpdate(ConfigPayload {
-                session_id: None,
-                config: HashMap::new(),
-            }),
-        ),
-        (
-            "empty_spikes",
-            "Spikes",
-            IpcMessage::Spikes(SpikeBatch {
-                session_id: None,
-                batch_id: 0,
-                timestamp: 0,
-                spikes: vec![],
-                metadata: None,
-            }),
-        ),
-        (
-            "unicode_metadata",
-            "Spikes",
-            IpcMessage::Spikes(SpikeBatch {
-                session_id: Some("séssion-日本語".into()),
-                batch_id: 55,
-                timestamp: 1_700_002_000,
-                spikes: vec![SpikeEvent {
-                    channel: 1,
-                    time: 2,
-                    strength: 0.5,
-                }],
-                metadata: Some(unicode_meta),
-            }),
-        ),
-        (
-            "signed_zero",
-            "ConfigUpdate",
-            IpcMessage::ConfigUpdate(ConfigPayload {
-                session_id: None,
-                config: signed_zero,
             }),
         ),
     ]
