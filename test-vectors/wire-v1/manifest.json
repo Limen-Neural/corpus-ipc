@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "encoding_profile": "corpus-ipc wire v1 canonical JSON (docs/wire-encoding.md)",
-  "generator": "REGENERATE_WIRE_V1=1 cargo test --locked --test wire_v1_vectors regenerate_fixtures",
+  "generator": "REGENERATE_WIRE_V1=1 cargo test --locked --test wire_v1_regenerate",
   "fixtures": [
     {
       "name": "ping",

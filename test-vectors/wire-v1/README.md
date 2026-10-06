@@ -43,7 +43,7 @@ Positive-vector drift (encoder change or intentional fixture update) fails
 `tests/wire_v1_vectors.rs`. Regenerate intentionally with:
 
 ```bash
-REGENERATE_WIRE_V1=1 cargo test --locked --test wire_v1_vectors regenerate_fixtures
+REGENERATE_WIRE_V1=1 cargo test --locked --test wire_v1_regenerate
 ```
 
 This rewrites the `positive` files from `encode_canonical_ipc_message` and
