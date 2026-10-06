@@ -213,6 +213,12 @@ domain, deterministic bytes) is specified in
 `encode_canonical_ipc_message`. It is the project wire profile, not RFC 8785 /
 JCS.
 
+Golden wire-v1 vectors covering every `IpcMessage` variant — plus
+hand-maintained legacy, alias, normalization, and negative fixtures — live
+in [`test-vectors/wire-v1/`](test-vectors/wire-v1/README.md) (repository-only,
+not packaged). `manifest.json` records each fixture's SHA-256 and decode
+expectation for cross-language consumers.
+
 ## Crate Exports
 
 - Backends and traits:

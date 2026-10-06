@@ -1,0 +1,1 @@
+{"wire_version":1,"payload":{"EligibilityTraces":{"session_id":"sess-1","batch_id":34,"traces":[{"neuron_id":5,"trace_value":0.75,"last_spike_time":1000}]}}}

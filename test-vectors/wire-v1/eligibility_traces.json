@@ -1,0 +1,1 @@
+{"payload":{"EligibilityTraces":{"batch_id":34,"session_id":"sess-1","traces":[{"channel_id":5,"last_spike_time":1000,"trace_value":0.75},{"channel_id":9,"last_spike_time":2000,"trace_value":0.5}]}},"wire_version":1}

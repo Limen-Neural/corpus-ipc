@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "encoding_profile": "corpus-ipc wire v1 canonical JSON (docs/wire-encoding.md)",
+  "generator": "REGENERATE_WIRE_V1=1 cargo test --locked --test wire_v1_vectors regenerate_fixtures",
+  "fixtures": [
+    {
+      "name": "ping",
+      "file": "ping.json",
+      "sha256": "87c9ccce0a3c871b2a6b02fe87b6b278d2d3ca995e4fdcd1b9977cd98d6f11c8",
+      "kind": "positive",
+      "variant": "Ping",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "shutdown",
+      "file": "shutdown.json",
+      "sha256": "55431a6c5498a64bb175cc4bb0a6a92e4ae7248496898a619c19b15a0eecc09e",
+      "kind": "positive",
+      "variant": "Shutdown",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "training_complete",
+      "file": "training_complete.json",
+      "sha256": "38c356598248b93bc85bac1bd99aedaf7e585373e2fc55c17db4f4c1f705229a",
+      "kind": "positive",
+      "variant": "TrainingComplete",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "loss",
+      "file": "loss.json",
+      "sha256": "8269025d5a4fc50b97586d0e5a2e5c63925304ba4ead90ead7edacfaa61fe759",
+      "kind": "positive",
+      "variant": "Loss",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "spikes",
+      "file": "spikes.json",
+      "sha256": "ac07c6520becad24c753ebe3e380648a6a6b1081acd33d68609543f0e2434630",
+      "kind": "positive",
+      "variant": "Spikes",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "embeddings",
+      "file": "embeddings.json",
+      "sha256": "9d07e810a882d60c4e9bca96a255772d8571de91c584be0380b84f68dd275a6c",
+      "kind": "positive",
+      "variant": "Embeddings",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "stimuli_masked",
+      "file": "stimuli_masked.json",
+      "sha256": "d5f41252129069c524a458e7aa4d3fc3f7c70fa93b84f6f5df3abe5a4b876ca1",
+      "kind": "positive",
+      "variant": "Stimuli",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "stimuli_unmasked",
+      "file": "stimuli_unmasked.json",
+      "sha256": "528a57cae80fb9e282ec837e8da41ee7e98f13ac86c948469069423bd4e19431",
+      "kind": "positive",
+      "variant": "Stimuli",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "neuromodulators",
+      "file": "neuromodulators.json",
+      "sha256": "c2ed7328c9d97677783efe7a22520d3383cca4f3aee1b56022ce0fe009fc5559",
+      "kind": "positive",
+      "variant": "Neuromodulators",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "config_update",
+      "file": "config_update.json",
+      "sha256": "7c509f28002e388d914319112fa092a5bbb901fe5595ff3a216757c3b8f9c7d7",
+      "kind": "positive",
+      "variant": "ConfigUpdate",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "gradient_update",
+      "file": "gradient_update.json",
+      "sha256": "2c78542f38be18d858f3f7d30f2254f774b7dbca93e25c6f269e5fa91cd5065f",
+      "kind": "positive",
+      "variant": "GradientUpdate",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "eligibility_traces",
+      "file": "eligibility_traces.json",
+      "sha256": "f5ac4dc6edd67b26eb5fdc7974de441d7eaa3c986cad9c77e3f6b3c5611ab046",
+      "kind": "positive",
+      "variant": "EligibilityTraces",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "boundaries",
+      "file": "boundaries.json",
+      "sha256": "139d53159ea8e3e0259383c7035590c78b433c7cd42013a3b19fea71f70f2a31",
+      "kind": "positive",
+      "variant": "Spikes",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "empty_collections",
+      "file": "empty_collections.json",
+      "sha256": "df8b8f5ddb580790cfc343d9c6f6c763319e3edf1f60f72116b1925902e6b2da",
+      "kind": "positive",
+      "variant": "ConfigUpdate",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "empty_spikes",
+      "file": "empty_spikes.json",
+      "sha256": "cc895aa94e66fd94c34eb6aeb1c69f34f5cb64f724cd29e7d8177134756c0995",
+      "kind": "positive",
+      "variant": "Spikes",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "unicode_metadata",
+      "file": "unicode_metadata.json",
+      "sha256": "da4fac593608b0b238cb004cafed10d9c7a832af9e4c017f9b6ebe60842bf82b",
+      "kind": "positive",
+      "variant": "Spikes",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "signed_zero",
+      "file": "signed_zero.json",
+      "sha256": "6de72699f23ff5079aca6175ac8457f44eb1bff997bffe5b98a4470aeaf091e1",
+      "kind": "positive",
+      "variant": "ConfigUpdate",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "legacy_unversioned_ping",
+      "file": "legacy_unversioned_ping.json",
+      "sha256": "069147a2ff99d623c7b62c67acc8f629a5c1600e84cebfcbd41ef7b99b382873",
+      "kind": "legacy",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "legacy_unversioned_spikes",
+      "file": "legacy_unversioned_spikes.json",
+      "sha256": "abfe8fb2d31778133aece7bb92982e247269aded32fe755c937a7cb73cef3883",
+      "kind": "legacy",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "alias_neuron_id_traces",
+      "file": "alias_neuron_id_traces.json",
+      "sha256": "ea0a5e81521dc80a51f73b2c95e348bcce3a56f4ec5c6233c8efa1752623cc58",
+      "kind": "alias",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "normalization_integer_config",
+      "file": "normalization_integer_config.json",
+      "sha256": "ddc315aca7f7a751b02d67f7ce5c51539cb9b463e598d2d11e5290a612ed9c8b",
+      "kind": "normalization",
+      "expect": "decode_ok"
+    },
+    {
+      "name": "v0_too_old_ping",
+      "file": "v0_too_old_ping.json",
+      "sha256": "d9febb4aaf387c867b3ff2ea8be2a3cd1fc67d83818f468c3198bab59a383904",
+      "kind": "negative",
+      "expect": "too_old"
+    },
+    {
+      "name": "v2_too_new_unknown_variant",
+      "file": "v2_too_new_unknown_variant.json",
+      "sha256": "86c0b1fb1d05a643025d8afda212e789c24c0a7f9a3499fe11a423be047c9c0b",
+      "kind": "negative",
+      "expect": "too_new"
+    },
+    {
+      "name": "v2_too_new_malformed_payload",
+      "file": "v2_too_new_malformed_payload.json",
+      "sha256": "7f7f4a761ccf99869acf705f466cd177a506ceeb89b06782dc33240143d0d650",
+      "kind": "negative",
+      "expect": "too_new"
+    },
+    {
+      "name": "v1_unknown_variant",
+      "file": "v1_unknown_variant.json",
+      "sha256": "9f8d24ea015f6985f02b60ac00474b822eb32c19096cd16768775939217a5ae9",
+      "kind": "negative",
+      "expect": "payload_error"
+    },
+    {
+      "name": "v1_wrong_tagging",
+      "file": "v1_wrong_tagging.json",
+      "sha256": "dd521d6fb27d75045ace20e60ec66324ceb935c536207097aace18bf4c1c79d0",
+      "kind": "negative",
+      "expect": "payload_error"
+    },
+    {
+      "name": "malformed_json",
+      "file": "malformed_json.json",
+      "sha256": "4ca7c77568461d6762c9032374b285a869279f4156fcca43163a2af152a247ff",
+      "kind": "negative",
+      "expect": "json_error"
+    },
+    {
+      "name": "v1_invalid_neuromod_range",
+      "file": "v1_invalid_neuromod_range.json",
+      "sha256": "a8ff4d1998178e56790b4bd256f87295825c28407411f6489943afe5a74c6121",
+      "kind": "negative",
+      "expect": "payload_error"
+    },
+    {
+      "name": "v1_invalid_stimulus_mask",
+      "file": "v1_invalid_stimulus_mask.json",
+      "sha256": "f8b699702c4f0d19f37fd365c029b2167b51b9b4731e8eab712f83abb9c7a404",
+      "kind": "negative",
+      "expect": "payload_error"
+    }
+  ]
+}
