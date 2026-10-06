@@ -142,84 +142,84 @@
     {
       "name": "legacy_unversioned_ping",
       "file": "legacy_unversioned_ping.json",
-      "sha256": "069147a2ff99d623c7b62c67acc8f629a5c1600e84cebfcbd41ef7b99b382873",
+      "sha256": "2aa457ad2e6cad4289182ab6b2d0d3f44b7b8abdda8164833ec628ac3471f015",
       "kind": "legacy",
       "expect": "decode_ok"
     },
     {
       "name": "legacy_unversioned_spikes",
       "file": "legacy_unversioned_spikes.json",
-      "sha256": "abfe8fb2d31778133aece7bb92982e247269aded32fe755c937a7cb73cef3883",
+      "sha256": "ba8c55576746d4d700845cb46ae1a7fedbfda3b4aa60062aee3a51f0ad73753a",
       "kind": "legacy",
       "expect": "decode_ok"
     },
     {
       "name": "alias_neuron_id_traces",
       "file": "alias_neuron_id_traces.json",
-      "sha256": "ea0a5e81521dc80a51f73b2c95e348bcce3a56f4ec5c6233c8efa1752623cc58",
+      "sha256": "1ee8e94d61a06e462d650249f2b5eac70a96e7b747c726f243799891ec8b5f7a",
       "kind": "alias",
       "expect": "decode_ok"
     },
     {
       "name": "normalization_integer_config",
       "file": "normalization_integer_config.json",
-      "sha256": "ddc315aca7f7a751b02d67f7ce5c51539cb9b463e598d2d11e5290a612ed9c8b",
+      "sha256": "696f69a6297fe4a6ea910e7c3f90072f8da82b1af4cbfd0de1cbf883991d67d7",
       "kind": "normalization",
       "expect": "decode_ok"
     },
     {
       "name": "v0_too_old_ping",
       "file": "v0_too_old_ping.json",
-      "sha256": "d9febb4aaf387c867b3ff2ea8be2a3cd1fc67d83818f468c3198bab59a383904",
+      "sha256": "3a0c432c777ba1a13cddb33df95927366f286d41e3fb91b45ac21404b98ba8f5",
       "kind": "negative",
       "expect": "too_old"
     },
     {
       "name": "v2_too_new_unknown_variant",
       "file": "v2_too_new_unknown_variant.json",
-      "sha256": "86c0b1fb1d05a643025d8afda212e789c24c0a7f9a3499fe11a423be047c9c0b",
+      "sha256": "e32f45a2af60b19c4666812e8a45fa819f173d92fa63b8481438d99149304982",
       "kind": "negative",
       "expect": "too_new"
     },
     {
       "name": "v2_too_new_malformed_payload",
       "file": "v2_too_new_malformed_payload.json",
-      "sha256": "7f7f4a761ccf99869acf705f466cd177a506ceeb89b06782dc33240143d0d650",
+      "sha256": "f2afc09aa37b37a943e9cdb76db926a266eb9499bb2d08590394f7a10568fad4",
       "kind": "negative",
       "expect": "too_new"
     },
     {
       "name": "v1_unknown_variant",
       "file": "v1_unknown_variant.json",
-      "sha256": "9f8d24ea015f6985f02b60ac00474b822eb32c19096cd16768775939217a5ae9",
+      "sha256": "9aa01e6da205033a3ae694a058f3a577f655632e3d8fdef5bc0474805f0136eb",
       "kind": "negative",
       "expect": "payload_error"
     },
     {
       "name": "v1_wrong_tagging",
       "file": "v1_wrong_tagging.json",
-      "sha256": "dd521d6fb27d75045ace20e60ec66324ceb935c536207097aace18bf4c1c79d0",
+      "sha256": "f7b8b5edbae6b7ff9b6f9b99c7d2fb94188cb07eafb731c9c0c13650de9b9f28",
       "kind": "negative",
       "expect": "payload_error"
     },
     {
       "name": "malformed_json",
       "file": "malformed_json.json",
-      "sha256": "4ca7c77568461d6762c9032374b285a869279f4156fcca43163a2af152a247ff",
+      "sha256": "1e197fbe6b65592609d252baef5d9088914d89c1175522891dd5af8b02c935c1",
       "kind": "negative",
       "expect": "json_error"
     },
     {
       "name": "v1_invalid_neuromod_range",
       "file": "v1_invalid_neuromod_range.json",
-      "sha256": "a8ff4d1998178e56790b4bd256f87295825c28407411f6489943afe5a74c6121",
+      "sha256": "72c71f2b7a2c569a714687a6911754c5a64b02e2122c36d0523cdb668da71d9f",
       "kind": "negative",
       "expect": "payload_error"
     },
     {
       "name": "v1_invalid_stimulus_mask",
       "file": "v1_invalid_stimulus_mask.json",
-      "sha256": "f8b699702c4f0d19f37fd365c029b2167b51b9b4731e8eab712f83abb9c7a404",
+      "sha256": "65db71d107b8c41da0641571138b754da1f2fb22a33fb65783ff20df61b9e4b2",
       "kind": "negative",
       "expect": "payload_error"
     }
