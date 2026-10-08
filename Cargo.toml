@@ -65,6 +65,7 @@ required-features = ["zmq"]
 
 [dev-dependencies]
 hex = "0.4"
+proptest = "1"
 sha2 = "0.10"
 
 [package.metadata.docs.rs]
