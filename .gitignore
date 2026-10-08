@@ -31,7 +31,10 @@ junit.xml
 .kilocode/worktrees/
 .devin/cache/
 .mimocode/
-.cursor/
+.cursor/*
+# Cursor Cloud Agent environment: committed on purpose.
+!.cursor/environment.json
+!.cursor/install.sh
 .cursorignore
 .codex/
 .cline/
