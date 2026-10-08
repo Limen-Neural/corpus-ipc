@@ -194,13 +194,17 @@ fn backend_error(error: &BackendError) -> ApiError {
 
 type ApiResult<T> = Result<T, ApiError>;
 
-/// Gate for endpoints that require a live initialized session.
-fn require_initialized(state: &AppState) -> ApiResult<()> {
-    if state.initialized.load(Ordering::SeqCst) {
-        Ok(())
-    } else {
-        Err(ApiError::not_initialized())
+/// Gate for endpoints that require a live initialized session, then run `f`
+/// against the locked backend. Shared by `/process` and `/save_state`.
+fn with_initialized_backend<R>(
+    state: &AppState,
+    f: impl FnOnce(&mut Box<dyn IpcBackend>) -> Result<R, BackendError>,
+) -> ApiResult<R> {
+    if !state.initialized.load(Ordering::SeqCst) {
+        return Err(ApiError::not_initialized());
     }
+    let mut backend = state.lock_backend()?;
+    f(&mut backend).map_err(|e| backend_error(&e))
 }
 
 // ---------- Handlers ----------
@@ -226,11 +230,8 @@ async fn process(
     payload: Result<Json<ProcessReq>, JsonRejection>,
 ) -> ApiResult<Json<ProcessRes>> {
     let Json(payload) = payload.map_err(json_rejection)?;
-    require_initialized(&state)?;
-    let mut backend = state.lock_backend()?;
-    let output = backend
-        .process_batch(&payload.inputs)
-        .map_err(|e| backend_error(&e))?;
+    let output =
+        with_initialized_backend(&state, |backend| backend.process_batch(&payload.inputs))?;
     Ok(Json(ProcessRes { ok: true, output }))
 }
 
@@ -239,11 +240,7 @@ async fn save_state(
     payload: Result<Json<SaveStateReq>, JsonRejection>,
 ) -> ApiResult<Json<AckRes>> {
     let Json(payload) = payload.map_err(json_rejection)?;
-    require_initialized(&state)?;
-    let backend = state.lock_backend()?;
-    backend
-        .save_state(&payload.model_path)
-        .map_err(|e| backend_error(&e))?;
+    with_initialized_backend(&state, |backend| backend.save_state(&payload.model_path))?;
     Ok(Json(AckRes {
         ok: true,
         message: "state saved",
