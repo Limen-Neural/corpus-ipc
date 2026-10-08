@@ -11,12 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **v0.2 REST contract** for `corpus_ipc_server` (feature `server`), now on
+  Axum 0.8 (LIM-1329). The router lives in `corpus_ipc::server::router` so it
+  can be exercised in-process without binding a socket; the binary is a thin
+  `main` over it. `docs/rest-api.md` documents the four endpoints
+  (`POST /initialize`, `/process`, `/save_state`, `/reset`), the success and
+  error envelopes, and the HTTP status classes, and ships in the crates.io
+  package.
+
 - Bounded ZMQ readout parser (`zmq_readout::parse_readout_packet`) shared by
   production recv and tests; golden LE fixtures + SHA-256 manifest under
   `test-vectors/zmq/` (LIM-1275, LIM-1328). Default decoded readout cap: 1024
   floats (`CORPUS_IPC_ZMQ_MAX_READOUT_FLOATS` override).
 
 ### Changed
+
+- **0.1 REST → v0.2 REST migration (not wire-compatible).** The 0.1 server
+  answered every application-level result with HTTP 200 and
+  `{"ok": false, "message"}` on backend errors. v0.2 uses real status
+  classes: 400 malformed JSON, 415 missing/wrong content type, 422
+  schema/input validation failures, 409 use before `/initialize` or after
+  `/reset`, 502 backend failures, 500 internal failures. Error bodies are
+  `{"ok": false, "error": {"code", "message"}}`. Success bodies gain
+  `"ok": true` (`/process` returns `{"ok": true, "output": [...]}`);
+  request bodies are unchanged. Axum/Tokio stay absent from default
+  consumers (`server` remains opt-in; `tower` is a dev-dependency for router
+  tests only).
 
 - `ZmqIpcBackend` rejects malformed or over-limit readout frames with
   `BackendError` instead of logging and retaining cache; `EAGAIN` still returns
