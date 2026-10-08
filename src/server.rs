@@ -56,7 +56,8 @@ impl AppState {
         }
     }
 
-    fn lock_backend(&self) -> Result<MutexGuard<'_, Box<dyn IpcBackend>>, ApiError> {
+    /// Lock the shared backend. Surfaces a 500 `internal_error` on poison.
+    pub fn lock_backend(&self) -> Result<MutexGuard<'_, Box<dyn IpcBackend>>, ApiError> {
         self.backend
             .lock()
             .map_err(|_| ApiError::internal("backend mutex poisoned"))
@@ -122,7 +123,8 @@ struct ErrorInfo {
 
 /// HTTP-mapped API error: a stable `code`, an HTTP status class, and a
 /// human-readable `message` (never serialized as the wire `code`).
-struct ApiError {
+#[derive(Debug)]
+pub struct ApiError {
     status: StatusCode,
     code: &'static str,
     message: String,

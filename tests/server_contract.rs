@@ -11,8 +11,11 @@
 //! cargo test --locked --features server --test server_contract
 //! ```
 
-use corpus_ipc::server::router;
-use corpus_ipc::{BackendFactory, BackendType};
+use std::sync::Arc;
+
+use axum::response::IntoResponse;
+use corpus_ipc::server::{AppState, router};
+use corpus_ipc::{BackendError, BackendFactory, BackendType, IpcBackend};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -164,6 +167,76 @@ async fn reset_requires_reinitialize_before_next_process() -> TestResult {
     let (status, body) = post_json(app, "/process", r#"{"inputs": [2.0]}"#).await;
     assert_eq!(status, 200, "body: {body}");
     assert_eq!(body["ok"], true);
+    Ok(())
+}
+
+// ---------- Backend failure mapping ----------
+
+/// Backend whose lifecycle succeeds but whose operations fail with distinct
+/// `BackendError` classes, so the 422/502 mappings are exercised end-to-end.
+struct ErrBackend;
+
+impl IpcBackend for ErrBackend {
+    fn process_batch(&mut self, _inputs: &[f32]) -> Result<Vec<f32>, BackendError> {
+        Err(BackendError::InvalidInput("bad batch".into()))
+    }
+    fn initialize(&mut self, _model_path: Option<&str>) -> Result<(), BackendError> {
+        Ok(())
+    }
+    fn save_state(&self, _model_path: &str) -> Result<(), BackendError> {
+        Err(BackendError::CommunicationError(
+            "engine unreachable".into(),
+        ))
+    }
+    fn get_spike_states(&self) -> Vec<bool> {
+        Vec::new()
+    }
+    fn reset(&mut self) -> Result<(), BackendError> {
+        Err(BackendError::ModelError("io failure".into()))
+    }
+}
+
+fn err_router() -> axum::Router {
+    router(Box::new(ErrBackend))
+}
+
+#[tokio::test]
+async fn backend_invalid_input_maps_to_422() -> TestResult {
+    let app = err_router();
+    post_json(app.clone(), "/initialize", "{}").await;
+    let (status, body) = post_json(app, "/process", r#"{"inputs": [1.0]}"#).await;
+    assert_error_envelope(status, &body, 422, "invalid_input");
+    Ok(())
+}
+
+#[tokio::test]
+async fn backend_operational_failures_map_to_502() -> TestResult {
+    let app = err_router();
+    post_json(app.clone(), "/initialize", "{}").await;
+    let (status, body) =
+        post_json(app.clone(), "/save_state", r#"{"model_path": "state.bin"}"#).await;
+    assert_error_envelope(status, &body, 502, "backend_error");
+    let (status, body) = post_json(app, "/reset", "{}").await;
+    assert_error_envelope(status, &body, 502, "backend_error");
+    Ok(())
+}
+
+#[tokio::test]
+async fn poisoned_backend_lock_maps_to_500() -> TestResult {
+    let state = Arc::new(AppState::new(Box::new(ErrBackend)));
+    let poisoned = Arc::clone(&state);
+    std::thread::spawn(move || {
+        let _guard = poisoned.lock_backend().expect("lock");
+        panic!("poison the mutex");
+    })
+    .join()
+    .expect_err("poisoning thread panics");
+    let error = state
+        .lock_backend()
+        .err()
+        .expect("poisoned mutex must surface an error");
+    let response = error.into_response();
+    assert_eq!(response.status().as_u16(), 500);
     Ok(())
 }
 
