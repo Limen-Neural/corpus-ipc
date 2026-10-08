@@ -1,0 +1,1 @@
+{"payload":{"GradientUpdate":{"batch_id":21,"gradients":[{"eligibility_trace":[0.5,0.25],"gradients":[0.009999999776482582,-0.019999999552965164],"layer_id":"layer-0"},{"eligibility_trace":null,"gradients":[0.5],"layer_id":"layer-1"}],"session_id":"sess-1"}},"wire_version":1}
