@@ -78,6 +78,21 @@ counts valid frames deliberately superseded while draining, and
 `BackendError` without updating the cache. Neither counter includes packets
 libzmq silently drops at its HWM.
 
+### ZMQ reconnect and close behavior
+
+The SUB socket sets `ZMQ_RECONNECT_IVL` / `ZMQ_RECONNECT_IVL_MAX` **before**
+`connect`, so recovery after the publisher starts late, stops, or restarts at
+the same endpoint is libzmq's own reconnect state machine (the stored
+subscribe filter is re-sent on each new connection) — there is no crate-owned
+retry thread. Defaults: initial interval **100 ms**, backoff capped at
+**5000 ms**; override via `CORPUS_IPC_ZMQ_RECONNECT_IVL_MS` and
+`CORPUS_IPC_ZMQ_RECONNECT_IVL_MAX_MS` (positive milliseconds only). `reset()`
+plus `initialize()` remains the explicit path for switching endpoints or
+forcing manual recovery: `reset` drops the old socket under the backend mutex,
+which closes it via `zmq_close` with libzmq's default `ZMQ_LINGER` — a SUB
+socket has no outbound queue, so nothing blocks on unsent data. `Drop` of the
+backend closes the same way through exclusive ownership.
+
 ### ZMQ readout wire format and bounds
 
 Binary SUB packets are **`i64` tick (LE) + `N × f32` readouts (LE)**. An
