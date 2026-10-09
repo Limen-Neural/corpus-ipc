@@ -637,40 +637,45 @@ mod tests {
     /// the SUB socket reconnects and re-subscribes without a `reset()`.
     #[test]
     fn publisher_restart_on_same_ipc_endpoint_recovers() {
-        publisher_restart_on_same_endpoint_recovers(&unique_test_endpoint());
+        let context = zmq::Context::new();
+        let first = context.socket(zmq::PUB).unwrap();
+        first.bind(&unique_test_endpoint()).unwrap();
+        publisher_restart_on_same_endpoint_recovers(&context, first);
     }
 
-    /// Same restart scenario over a TCP loopback endpoint.
+    /// Same restart scenario over a TCP loopback endpoint. Binding PUB on
+    /// port 0 lets libzmq pick the port atomically — no free-port probe that
+    /// another process could claim before the bind.
     #[test]
     fn publisher_restart_on_same_tcp_endpoint_recovers() {
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        publisher_restart_on_same_endpoint_recovers(&format!("tcp://127.0.0.1:{port}"));
+        let context = zmq::Context::new();
+        let first = context.socket(zmq::PUB).unwrap();
+        first.bind("tcp://127.0.0.1:0").unwrap();
+        publisher_restart_on_same_endpoint_recovers(&context, first);
     }
 
-    fn publisher_restart_on_same_endpoint_recovers(endpoint: &str) {
-        let context = zmq::Context::new();
+    fn publisher_restart_on_same_endpoint_recovers(context: &zmq::Context, first: zmq::Socket) {
+        let endpoint = first
+            .get_last_endpoint()
+            .unwrap()
+            .expect("publisher is bound");
         let mut backend = ZmqIpcBackend::new();
-        backend.initialize_at(endpoint).unwrap();
+        backend.initialize_at(&endpoint).unwrap();
 
         {
-            let first = context.socket(zmq::PUB).unwrap();
-            first.bind(endpoint).unwrap();
             assert!(
                 publish_until_seen(&first, &mut backend, 1, Duration::from_secs(5)),
                 "timed out waiting for the first publisher"
             );
             // `Drop` runs `zmq_close` with default linger; the SUB socket's
             // peer is now gone and libzmq starts the reconnect backoff.
+            drop(first);
         }
 
         let second = context.socket(zmq::PUB).unwrap();
         // `zmq_close` tears the old binding down on a libzmq I/O thread, so a
         // TCP endpoint can briefly report EADDRINUSE; retry the rebind.
-        let bound = wait_until(Duration::from_secs(5), || second.bind(endpoint).is_ok());
+        let bound = wait_until(Duration::from_secs(5), || second.bind(&endpoint).is_ok());
         assert!(bound, "timed out rebinding {endpoint} after publisher drop");
         assert!(
             publish_until_seen(&second, &mut backend, 2, Duration::from_secs(10)),
