@@ -87,12 +87,14 @@ struct ReconnectConfig {
     ivl_max_ms: i32,
 }
 
-fn env_i32_or(name: &str, default: i32) -> i32 {
-    std::env::var(name)
-        .ok()
-        .and_then(|raw| raw.parse::<i32>().ok())
+fn parse_positive_ms(raw: Option<String>, default: i32) -> i32 {
+    raw.and_then(|raw| raw.parse::<i32>().ok())
         .filter(|&v| v > 0)
         .unwrap_or(default)
+}
+
+fn env_i32_or(name: &str, default: i32) -> i32 {
+    parse_positive_ms(std::env::var(name).ok(), default)
 }
 
 fn reconnect_config_from_env() -> ReconnectConfig {
@@ -717,6 +719,18 @@ mod tests {
         for (i, val) in readout.iter().enumerate().take(count) {
             assert!((b.last_readout[i] - val).abs() < 1e-5);
         }
+    }
+
+    #[test]
+    fn reconnect_ms_parsing_accepts_positive_ints_only() {
+        assert_eq!(parse_positive_ms(Some("250".into()), 100), 250);
+        assert_eq!(parse_positive_ms(Some("1".into()), 100), 1);
+        // Missing, unparseable, zero, and negative values fall back.
+        assert_eq!(parse_positive_ms(None, 100), 100);
+        assert_eq!(parse_positive_ms(Some("nope".into()), 100), 100);
+        assert_eq!(parse_positive_ms(Some("0".into()), 100), 100);
+        assert_eq!(parse_positive_ms(Some("-5".into()), 100), 100);
+        assert_eq!(parse_positive_ms(Some("1.5".into()), 100), 100);
     }
 
     #[test]
