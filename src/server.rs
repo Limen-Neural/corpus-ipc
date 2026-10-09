@@ -202,10 +202,13 @@ fn with_initialized_backend<R>(
     state: &AppState,
     f: impl FnOnce(&mut Box<dyn IpcBackend>) -> Result<R, BackendError>,
 ) -> ApiResult<R> {
+    let mut backend = state.lock_backend()?;
+    // Check the flag under the backend lock: /reset and /initialize update it
+    // while holding the same lock, so gate and operation stay serialized and
+    // a concurrent reset cannot sneak between the check and the call.
     if !state.initialized.load(Ordering::SeqCst) {
         return Err(ApiError::not_initialized());
     }
-    let mut backend = state.lock_backend()?;
     f(&mut backend).map_err(|e| backend_error(&e))
 }
 
