@@ -30,6 +30,7 @@ include = [
     "/LICENSE-MIT",
     "/LICENSE-APACHE-2.0",
     "/docs/wire-encoding.md",
+    "/docs/rest-api.md",
 ]
 
 [dependencies]
@@ -42,7 +43,7 @@ serde_json = { version = "1.0", features = ["raw_value"] }
 # zmq 0.10 has no `vendored` feature (only `default` / `zmq_has`). zmq-sys
 # 0.12 always compiles libzmq from `zeromq-src`; a system libzmq is not required.
 zmq = { version = "0.10", optional = true }
-axum = { version = "0.7", optional = true, default-features = false, features = ["http1", "json", "tokio"] }
+axum = { version = "0.8", optional = true, default-features = false, features = ["http1", "json", "tokio"] }
 tokio = { version = "1", optional = true, default-features = false, features = ["macros", "net", "rt-multi-thread"] }
 
 [features]
@@ -59,6 +60,11 @@ name = "corpus_ipc_server"
 required-features = ["server"]
 
 [[test]]
+name = "server_contract"
+path = "tests/server_contract.rs"
+required-features = ["server"]
+
+[[test]]
 name = "zmq_golden_readout"
 path = "tests/zmq_golden_readout.rs"
 required-features = ["zmq"]
@@ -67,6 +73,8 @@ required-features = ["zmq"]
 hex = "0.4"
 proptest = "1"
 sha2 = "0.10"
+# Router contract tests drive the axum Router in-process via `oneshot`.
+tower = { version = "0.5", features = ["util"] }
 
 [package.metadata.docs.rs]
 # Default crate only. The `zmq` feature compiles vendored C++ via zmq-sys.

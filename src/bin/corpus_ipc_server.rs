@@ -5,18 +5,15 @@
 //! Built only when the `server` crate feature is enabled
 //! (`required-features = ["server"]`). Add `zmq` as well if the process should
 //! be able to select `CORPUS_IPC_BACKEND_TYPE=zmq`.
+//!
+//! The v0.2 request/response/error contract is documented in
+//! `docs/rest-api.md`.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::Mutex;
 use tokio::net::TcpListener;
 
-use axum::{Json, Router, extract::Extension, routing::post};
+use corpus_ipc::BackendType;
 use corpus_ipc::trait_def::BackendFactory;
-use corpus_ipc::{BackendError, BackendType, IpcBackend};
-use serde::{Deserialize, Serialize};
-
-type SharedBackend = Arc<Mutex<Box<dyn IpcBackend>>>;
 
 #[tokio::main]
 async fn main() {
@@ -38,16 +35,7 @@ async fn main() {
         _ => BackendType::Rust,
     };
 
-    // Instantiate backend and wrap in a thread-safe container.
-    let backend: SharedBackend = Arc::new(Mutex::new(BackendFactory::create(backend_type)));
-
-    // Build routes.
-    let app = Router::new()
-        .route("/initialize", post(initialize))
-        .route("/process", post(process))
-        .route("/save_state", post(save_state))
-        .route("/reset", post(reset))
-        .layer(Extension(backend));
+    let app = corpus_ipc::server::router(BackendFactory::create(backend_type));
 
     // Loopback by default. Set CORPUS_IPC_BIND for another address; remote
     // binds need an external access-control boundary (no auth/TLS here).
@@ -61,91 +49,4 @@ async fn main() {
     axum::serve(listener, app.into_make_service())
         .await
         .unwrap();
-}
-
-// ---------- Request/response types ----------
-
-#[derive(Debug, Deserialize)]
-struct InitializeReq {
-    model_path: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ProcessReq {
-    inputs: Vec<f32>,
-}
-
-#[derive(Debug, Serialize)]
-struct ProcessRes {
-    output: Vec<f32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SaveStateReq {
-    model_path: String,
-}
-
-#[derive(Debug, Serialize)]
-struct SimpleRes {
-    ok: bool,
-    message: String,
-}
-
-// ---------- Handlers ----------
-
-async fn initialize(
-    Extension(backend): Extension<SharedBackend>,
-    Json(payload): Json<InitializeReq>,
-) -> Json<SimpleRes> {
-    let mut be = backend.lock().unwrap();
-    let res = be.initialize(payload.model_path.as_deref());
-    reply(res, "initialized")
-}
-
-async fn process(
-    Extension(backend): Extension<SharedBackend>,
-    Json(payload): Json<ProcessReq>,
-) -> Result<Json<ProcessRes>, Json<SimpleRes>> {
-    let mut be = backend.lock().unwrap();
-    match be.process_batch(&payload.inputs) {
-        Ok(out) => Ok(Json(ProcessRes { output: out })),
-        Err(e) => Err(Json(SimpleRes {
-            ok: false,
-            message: e.to_string(),
-        })),
-    }
-}
-
-async fn save_state(
-    Extension(backend): Extension<SharedBackend>,
-    Json(payload): Json<SaveStateReq>,
-) -> Json<SimpleRes> {
-    let be = backend.lock().unwrap();
-    let res = be.save_state(&payload.model_path);
-    reply(res, "state saved")
-}
-
-async fn reset(Extension(backend): Extension<SharedBackend>) -> Json<SimpleRes> {
-    let mut be = backend.lock().unwrap();
-    let res = be.reset();
-    // Note: after reset(), some backends (e.g. ZMQ) clear their connection state
-    // and require a subsequent /initialize call before the next /process.
-    // Clients should call /initialize (with model_path if needed) after /reset
-    // if they intend to continue processing.
-    reply(res, "reset")
-}
-
-// ---------- Helpers ----------
-
-fn reply(res: Result<(), BackendError>, success_msg: &str) -> Json<SimpleRes> {
-    match res {
-        Ok(_) => Json(SimpleRes {
-            ok: true,
-            message: success_msg.into(),
-        }),
-        Err(e) => Json(SimpleRes {
-            ok: false,
-            message: e.to_string(),
-        }),
-    }
 }

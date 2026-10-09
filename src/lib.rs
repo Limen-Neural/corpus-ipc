@@ -24,7 +24,7 @@
 //! | --- | --- |
 //! | *(none / default)* | Wire models and `RustBackend` |
 //! | `zmq` | `ZmqIpcBackend` (vendored libzmq; needs a C++ compiler) |
-//! | `server` | `corpus_ipc_server` Axum REST binary (`axum` + `tokio`) |
+//! | `server` | `corpus_ipc_server` Axum 0.8 REST binary (`axum` + `tokio`) |
 //!
 //! Combine `server` and `zmq` when the REST service should select the ZMQ
 //! backend via `CORPUS_IPC_BACKEND_TYPE=zmq`.
@@ -42,6 +42,8 @@ pub mod compatibility;
 pub mod error;
 pub mod models;
 pub mod rust_backend;
+#[cfg(feature = "server")]
+pub mod server;
 pub mod trait_def;
 pub mod validation;
 

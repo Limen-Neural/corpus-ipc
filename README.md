@@ -42,9 +42,9 @@ link those stacks.
 | --- | --- | --- |
 | *(none)* | yes | Wire models (`IpcMessage`, batches, snapshots) and `RustBackend` |
 | `zmq` | no | `ZmqIpcBackend` (vendored libzmq via `zmq-sys`; needs a C++ compiler). `Send` + `Sync` via mutex-serialized SUB socket ownership; libzmq sockets themselves are `Send` + `!Sync`. |
-| `server` | no | `corpus_ipc_server` Axum REST binary (`axum` + minimized `tokio`) |
+| `server` | no | `corpus_ipc_server` Axum 0.8 REST binary (`axum` + minimized `tokio`) |
 
-`tower` is not a direct crate dependency. Axum 0.7 depends on it unconditionally,
+`tower` is not a direct crate dependency. Axum 0.8 depends on it unconditionally,
 so it appears only when the optional `server` feature enables Axum. `serde_json`
 is a library dependency so the compatibility envelope can inspect `wire_version`
 before deserializing a payload. The server binary uses Axum's `Json` extractor
@@ -122,6 +122,12 @@ CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server --bin corpu
 # With ZMQ backend selectable via CORPUS_IPC_BACKEND_TYPE=zmq
 CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server,zmq --bin corpus_ipc_server
 ```
+
+The v0.2 REST contract — endpoint request/response bodies, the shared error
+envelope, HTTP status classes, and the reset/re-initialize lifecycle — is
+specified in [`docs/rest-api.md`](docs/rest-api.md). The router has no
+authentication or TLS; a remote bind needs an external access-control
+boundary.
 
 ## Quick Start
 
