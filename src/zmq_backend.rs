@@ -62,6 +62,48 @@ const RECEIVE_DRAIN_MAX_MESSAGES: u32 = 64; // >= READOUT_RCVHWM*4; keep const-f
 /// Soft wall-clock budget for the same drain (parse time included).
 const RECEIVE_DRAIN_MAX_DURATION: Duration = Duration::from_millis(5);
 
+/// Default initial reconnect interval (`ZMQ_RECONNECT_IVL`), in milliseconds.
+/// Matches the libzmq default of 100 ms and is applied explicitly so the
+/// value is documented and overrideable via [`ENV_RECONNECT_IVL_MS`].
+pub const DEFAULT_RECONNECT_IVL_MS: i32 = 100;
+/// Default maximum reconnect interval (`ZMQ_RECONNECT_IVL_MAX`), in
+/// milliseconds. libzmq's default of `0` disables exponential backoff;
+/// this crate instead caps backoff at a finite 5 s so a long-down publisher
+/// does not pin reconnect attempts at the initial interval.
+pub const DEFAULT_RECONNECT_IVL_MAX_MS: i32 = 5_000;
+/// Environment variable overriding [`DEFAULT_RECONNECT_IVL_MS`]
+/// (`ZMQ_RECONNECT_IVL`). Positive milliseconds only; a missing,
+/// unparseable, or non-positive value falls back to the default.
+pub const ENV_RECONNECT_IVL_MS: &str = "CORPUS_IPC_ZMQ_RECONNECT_IVL_MS";
+/// Environment variable overriding [`DEFAULT_RECONNECT_IVL_MAX_MS`]
+/// (`ZMQ_RECONNECT_IVL_MAX`). Positive milliseconds only; a missing,
+/// unparseable, or non-positive value falls back to the default.
+pub const ENV_RECONNECT_IVL_MAX_MS: &str = "CORPUS_IPC_ZMQ_RECONNECT_IVL_MAX_MS";
+
+/// Resolved `ZMQ_RECONNECT_IVL`/`ZMQ_RECONNECT_IVL_MAX` (milliseconds).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ReconnectConfig {
+    ivl_ms: i32,
+    ivl_max_ms: i32,
+}
+
+fn parse_positive_ms(raw: Option<String>, default: i32) -> i32 {
+    raw.and_then(|raw| raw.parse::<i32>().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(default)
+}
+
+fn env_i32_or(name: &str, default: i32) -> i32 {
+    parse_positive_ms(std::env::var(name).ok(), default)
+}
+
+fn reconnect_config_from_env() -> ReconnectConfig {
+    ReconnectConfig {
+        ivl_ms: env_i32_or(ENV_RECONNECT_IVL_MS, DEFAULT_RECONNECT_IVL_MS),
+        ivl_max_ms: env_i32_or(ENV_RECONNECT_IVL_MAX_MS, DEFAULT_RECONNECT_IVL_MAX_MS),
+    }
+}
+
 impl ExclusiveSocket {
     fn recv_bytes_dontwait(&mut self) -> zmq::Result<Vec<u8>> {
         self.socket.recv_bytes(zmq::DONTWAIT)
@@ -128,6 +170,21 @@ pub type ZmqRuntimeBackend = ZmqIpcBackend;
 /// override via [`ENV_MAX_READOUT_FLOATS`](crate::zmq_readout::ENV_MAX_READOUT_FLOATS)).
 /// libzmq still allocates the raw received buffer; this cap applies only to the
 /// decoded `Vec<f32>`.
+///
+/// ## Reconnect and close behavior
+///
+/// The SUB socket is configured with `ZMQ_RECONNECT_IVL` /
+/// `ZMQ_RECONNECT_IVL_MAX` (defaults [`DEFAULT_RECONNECT_IVL_MS`] and
+/// [`DEFAULT_RECONNECT_IVL_MAX_MS`], overridable via [`ENV_RECONNECT_IVL_MS`]
+/// and [`ENV_RECONNECT_IVL_MAX_MS`]) *before* `connect`. Recovery after the
+/// publisher starts late, stops, or restarts at the same endpoint is handled
+/// entirely by libzmq's reconnect state machine — including re-sending the
+/// stored `subscribe` filter on each new connection — so there is no
+/// crate-owned retry thread and `process_batch` stays non-blocking.
+///
+/// `reset` and `Drop` close the socket via `zmq_close` with libzmq's default
+/// `ZMQ_LINGER`. A SUB socket has no outbound queue, so no unsent data can
+/// wait on linger; close takes effect once in-flight wire reads drain.
 pub struct ZmqIpcBackend {
     context: zmq::Context,
     /// Serialized so the backend is `Sync` without claiming `zmq::Socket: Sync`.
@@ -188,7 +245,11 @@ impl ZmqIpcBackend {
     ///
     /// Socket construction and `connect` run on the calling thread *before*
     /// the value is stored. Only the store takes the lock.
-    fn connect_sub(&mut self, endpoint: &str) -> Result<(), BackendError> {
+    fn connect_sub_with(
+        &mut self,
+        endpoint: &str,
+        cfg: ReconnectConfig,
+    ) -> Result<(), BackendError> {
         let socket = self
             .context
             .socket(zmq::SUB)
@@ -199,6 +260,15 @@ impl ZmqIpcBackend {
         socket
             .set_rcvhwm(READOUT_RCVHWM)
             .map_err(|e| BackendError::InitializationError(format!("ZMQ rcvhwm: {e}")))?;
+        // Reconnect options must be applied before `connect`: libzmq reads
+        // them when establishing each connection attempt, so setting them
+        // afterwards would leave the first reconnect cycle at the old values.
+        socket
+            .set_reconnect_ivl(cfg.ivl_ms)
+            .map_err(|e| BackendError::InitializationError(format!("ZMQ reconnect_ivl: {e}")))?;
+        socket.set_reconnect_ivl_max(cfg.ivl_max_ms).map_err(|e| {
+            BackendError::InitializationError(format!("ZMQ reconnect_ivl_max: {e}"))
+        })?;
         socket.connect(endpoint).map_err(|e| {
             BackendError::InitializationError(format!(
                 "ZMQ connect to {endpoint}: {e} (is the IPC producer running?)"
@@ -208,14 +278,26 @@ impl ZmqIpcBackend {
         Ok(())
     }
 
+    fn connect_sub(&mut self, endpoint: &str) -> Result<(), BackendError> {
+        self.connect_sub_with(endpoint, reconnect_config_from_env())
+    }
+
     /// Test helper: initialize against a caller-chosen endpoint so live tests
     /// do not share `CORPUS_IPC_ZMQ_READOUT_IPC` / the default production path.
+    /// Uses short reconnect intervals (env vars are process-global and unsafe
+    /// to mutate from parallel tests) so restart tests stay fast.
     #[cfg(test)]
     fn initialize_at(&mut self, endpoint: &str) -> Result<(), BackendError> {
         if self.initialized {
             return Ok(());
         }
-        self.connect_sub(endpoint)?;
+        self.connect_sub_with(
+            endpoint,
+            ReconnectConfig {
+                ivl_ms: 10,
+                ivl_max_ms: 100,
+            },
+        )?;
         self.initialized = true;
         Ok(())
     }
@@ -348,7 +430,8 @@ impl IpcBackend for ZmqIpcBackend {
 
     /// Initialise the ZMQ SUB socket and connect to the readout endpoint.
     ///
-    /// Endpoint may be overridden by `CORPUS_IPC_ZMQ_READOUT_IPC`.
+    /// Endpoint may be overridden by `CORPUS_IPC_ZMQ_READOUT_IPC`; reconnect
+    /// intervals by [`ENV_RECONNECT_IVL_MS`] / [`ENV_RECONNECT_IVL_MAX_MS`].
     ///
     /// Idempotent: second call is a no-op once connected.
     ///
@@ -387,9 +470,13 @@ impl IpcBackend for ZmqIpcBackend {
     /// Reset cached readout state. Does not affect the remote process.
     ///
     /// As a side effect, clears the `initialized` flag and drops the current
-    /// SUB socket (if any). This allows a subsequent call to `initialize()`
-    /// to re-establish the connection (e.g. after changing
-    /// `CORPUS_IPC_ZMQ_READOUT_IPC` at runtime).
+    /// SUB socket (if any) under the socket mutex; the drop runs `zmq_close`
+    /// with libzmq's default `ZMQ_LINGER` (no outbound queue exists on SUB,
+    /// so nothing blocks on unsent data). This allows a subsequent call to
+    /// `initialize()` to re-establish the connection (e.g. after changing
+    /// `CORPUS_IPC_ZMQ_READOUT_IPC` at runtime). This is the explicit path
+    /// for endpoint changes or forced manual recovery — automatic recovery
+    /// from publisher restarts is libzmq's reconnect behavior instead.
     fn reset(&mut self) -> Result<(), BackendError> {
         self.last_readout.clear();
         self.tick = 0;
@@ -503,6 +590,123 @@ mod tests {
         panic!("ZMQ subscription did not become ready");
     }
 
+    /// Send `packet` (with `tick`) until the backend observes that tick or the
+    /// deadline passes. Used by reconnect tests: frames sent before a (re)bound
+    /// publisher sees the subscription are dropped, so sends must repeat.
+    fn publish_until_seen(
+        publisher: &zmq::Socket,
+        backend: &mut ZmqIpcBackend,
+        tick: i64,
+        timeout: Duration,
+    ) -> bool {
+        let packet = make_packet(tick, &[tick as f32]);
+        wait_until(timeout, || {
+            publisher.send(packet.clone(), 0).unwrap();
+            backend.process_batch(&[]).unwrap();
+            backend.tick() == tick
+        })
+    }
+
+    /// A backend connected before any publisher exists recovers purely via
+    /// libzmq reconnect (`ZMQ_RECONNECT_IVL`) once the publisher binds — no
+    /// crate-owned retry thread and no `reset()`/`initialize()` cycle.
+    #[test]
+    fn late_publisher_startup_recovers_via_libzmq_reconnect() {
+        let endpoint = unique_test_endpoint();
+        let mut backend = ZmqIpcBackend::new();
+        backend
+            .initialize_at(&endpoint)
+            .expect("connect is asynchronous before the publisher binds");
+        assert!(
+            backend.process_batch(&[]).unwrap().is_empty(),
+            "no publisher yet: empty cache on EAGAIN"
+        );
+
+        let context = zmq::Context::new();
+        let publisher = context.socket(zmq::PUB).unwrap();
+        publisher.bind(&endpoint).unwrap();
+
+        assert!(
+            publish_until_seen(&publisher, &mut backend, 7, Duration::from_secs(5)),
+            "timed out waiting for libzmq reconnect after late publisher bind"
+        );
+        assert_eq!(backend.last_readout, vec![7.0]);
+    }
+
+    /// The publisher is dropped and a fresh PUB binds the same IPC endpoint;
+    /// the SUB socket reconnects and re-subscribes without a `reset()`.
+    #[test]
+    fn publisher_restart_on_same_ipc_endpoint_recovers() {
+        let context = zmq::Context::new();
+        let first = context.socket(zmq::PUB).unwrap();
+        first.bind(&unique_test_endpoint()).unwrap();
+        publisher_restart_on_same_endpoint_recovers(&context, first);
+    }
+
+    /// Same restart scenario over a TCP loopback endpoint. Binding PUB on
+    /// port 0 lets libzmq pick the port atomically — no free-port probe that
+    /// another process could claim before the bind.
+    #[test]
+    fn publisher_restart_on_same_tcp_endpoint_recovers() {
+        let context = zmq::Context::new();
+        let first = context.socket(zmq::PUB).unwrap();
+        first.bind("tcp://127.0.0.1:0").unwrap();
+        publisher_restart_on_same_endpoint_recovers(&context, first);
+    }
+
+    fn publisher_restart_on_same_endpoint_recovers(context: &zmq::Context, first: zmq::Socket) {
+        let endpoint = first
+            .get_last_endpoint()
+            .unwrap()
+            .expect("publisher is bound");
+        let mut backend = ZmqIpcBackend::new();
+        backend.initialize_at(&endpoint).unwrap();
+
+        {
+            assert!(
+                publish_until_seen(&first, &mut backend, 1, Duration::from_secs(5)),
+                "timed out waiting for the first publisher"
+            );
+            // `Drop` runs `zmq_close` with default linger; the SUB socket's
+            // peer is now gone and libzmq starts the reconnect backoff.
+            drop(first);
+        }
+
+        let second = context.socket(zmq::PUB).unwrap();
+        // `zmq_close` tears the old binding down on a libzmq I/O thread, so a
+        // TCP endpoint can briefly report EADDRINUSE; retry the rebind.
+        let bound = wait_until(Duration::from_secs(5), || second.bind(&endpoint).is_ok());
+        assert!(bound, "timed out rebinding {endpoint} after publisher drop");
+        assert!(
+            publish_until_seen(&second, &mut backend, 2, Duration::from_secs(10)),
+            "timed out waiting for libzmq reconnect after publisher restart"
+        );
+        assert_eq!(backend.last_readout, vec![2.0]);
+    }
+
+    /// `reset()` closes the old socket and clears state; `initialize` may then
+    /// connect to a replacement endpoint — the explicit manual-recovery path.
+    #[test]
+    fn reset_then_initialize_at_replacement_endpoint() {
+        let stale_endpoint = unique_test_endpoint();
+        let live_endpoint = unique_test_endpoint();
+        let context = zmq::Context::new();
+        let publisher = context.socket(zmq::PUB).unwrap();
+        publisher.bind(&live_endpoint).unwrap();
+
+        let mut backend = ZmqIpcBackend::new();
+        backend.initialize_at(&stale_endpoint).unwrap();
+        backend.reset().unwrap();
+        assert_eq!(backend.readout_cache_snapshot_for_tests(), (0, vec![]));
+        backend.initialize_at(&live_endpoint).unwrap();
+
+        assert!(
+            publish_until_seen(&publisher, &mut backend, 5, Duration::from_secs(5)),
+            "timed out waiting for delivery on the replacement endpoint"
+        );
+        assert_eq!(backend.last_readout, vec![5.0]);
+    }
+
     #[test]
     fn parse_dynamic_packet_via_production_ingest() {
         let max_cap = crate::zmq_readout::max_readout_float_limit();
@@ -520,6 +724,18 @@ mod tests {
         for (i, val) in readout.iter().enumerate().take(count) {
             assert!((b.last_readout[i] - val).abs() < 1e-5);
         }
+    }
+
+    #[test]
+    fn reconnect_ms_parsing_accepts_positive_ints_only() {
+        assert_eq!(parse_positive_ms(Some("250".into()), 100), 250);
+        assert_eq!(parse_positive_ms(Some("1".into()), 100), 1);
+        // Missing, unparseable, zero, and negative values fall back.
+        assert_eq!(parse_positive_ms(None, 100), 100);
+        assert_eq!(parse_positive_ms(Some("nope".into()), 100), 100);
+        assert_eq!(parse_positive_ms(Some("0".into()), 100), 100);
+        assert_eq!(parse_positive_ms(Some("-5".into()), 100), 100);
+        assert_eq!(parse_positive_ms(Some("1.5".into()), 100), 100);
     }
 
     #[test]
