@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- crates.io metadata now describes the spike and neuromodulator wire protocol
+  (description, keywords `snn` / `neuromorphic` / `spiking` / `ipc` / `zmq`,
+  categories `science::neuroscience`, `network-programming`, `encoding`).
+  The README intro and crate-level docs use the same sentence. No API change
+  and no version bump (GitHub #53, LIM-1524).
+
 - **0.1 REST → v0.2 REST migration (not wire-compatible).** The 0.1 server
   answered every application-level result with HTTP 200 and
   `{"ok": false, "message"}` on backend errors. v0.2 uses real status
