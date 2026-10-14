@@ -10,9 +10,23 @@
 //!
 //! - [`IpcBackend`] — required backend contract (deprecated alias: `RuntimeBackend`)
 //! - [`RustBackend`] — pure-Rust native backend (no external deps, always available)
-//! - `ZmqIpcBackend` — IPC backend via ZMQ SUB socket (feature `zmq`;
+//! - `ZmqIpcBackend` — binary readout subscriber (feature `zmq`;
 //!   deprecated alias: `ZmqRuntimeBackend`). `Send` + `Sync` via mutex-serialized
 //!   socket ownership; the raw `zmq::Socket` is never `Sync`.
+//!
+//! ## Protocol surfaces
+//!
+//! Three integrations stay separate. None of them is a guaranteed-delivery bus:
+//!
+//! 1. **Structured ZeroMQ** (feature `zmq`) — `ZmqMessagePublisher` /
+//!    `ZmqMessageSubscriber` carry one compact canonical JSON
+//!    `WireEnvelope<IpcMessage>` frame per message. `ZmqHybridFlowBackend`
+//!    adapts that pair to [`HybridFlowBackend`]. PUB/SUB is best-effort and
+//!    at-most-once.
+//! 2. **Binary readout** — `ZmqIpcBackend` subscribes to `[i64 tick][N × f32 LE]`
+//!    packets. It does not implement [`HybridFlowBackend`].
+//! 3. **REST** — `corpus_ipc_server` (feature `server`) wraps [`IpcBackend`]
+//!    only. It does not speak `IpcMessage` JSON or the binary readout framing.
 //!
 //! ## Feature flags
 //!
@@ -23,7 +37,7 @@
 //! | Feature | Enables |
 //! | --- | --- |
 //! | *(none / default)* | Wire models and `RustBackend` |
-//! | `zmq` | `ZmqIpcBackend` (vendored libzmq; needs a C++ compiler) |
+//! | `zmq` | `ZmqIpcBackend` binary readout, plus `ZmqMessagePublisher`, `ZmqMessageSubscriber`, `ZmqTransportConfig`, and `ZmqHybridFlowBackend` (vendored libzmq; needs a C++ compiler) |
 //! | `server` | `corpus_ipc_server` Axum 0.8 REST binary (`axum` + `tokio`) |
 //!
 //! Combine `server` and `zmq` when the REST service should select the ZMQ
@@ -50,6 +64,8 @@ pub mod validation;
 #[cfg(feature = "zmq")]
 pub mod zmq_backend;
 #[cfg(feature = "zmq")]
+pub mod zmq_message;
+#[cfg(feature = "zmq")]
 pub mod zmq_readout;
 
 /// Re-export the wire-schema compatibility envelope.
@@ -60,7 +76,7 @@ pub use compatibility::{
     encode_ipc_message_json,
 };
 /// Re-export the main error type.
-pub use error::BackendError;
+pub use error::{BackendError, ProtocolError};
 /// Re-export all public data models used on the wire.
 pub use models::{
     BatchMetadata, ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate,
@@ -81,3 +97,8 @@ pub use zmq_backend::ZmqIpcBackend;
 #[cfg(feature = "zmq")]
 #[allow(deprecated)]
 pub use zmq_backend::ZmqRuntimeBackend;
+#[cfg(feature = "zmq")]
+pub use zmq_message::{
+    FramingFault, ZmqHybridFlowBackend, ZmqMessageError, ZmqMessagePublisher, ZmqMessageSubscriber,
+    ZmqTransportConfig,
+};

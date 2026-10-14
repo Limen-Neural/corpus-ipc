@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! ZMQ SUB backend — reads compute data packets from the remote compute IPC socket.
+//! ZMQ SUB backend — reads binary compute data packets from the remote IPC socket.
 //!
 //! Requires feature `zmq`.
+//!
+//! This is the **binary readout** surface: `[i64 tick][N × f32 LE]`. Structured
+//! [`crate::IpcMessage`] JSON is a separate surface implemented by
+//! [`crate::zmq_message`]. REST (`corpus_ipc_server`, feature `server`) is the
+//! third surface and speaks neither framing. This backend does not implement
+//! [`crate::HybridFlowBackend`].
 //!
 //! # Concurrency
 //!

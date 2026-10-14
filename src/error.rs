@@ -28,4 +28,29 @@ pub enum BackendError {
     /// Caller supplied invalid input (e.g. empty batch where disallowed, bad config).
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+
+    /// A structured message was valid on the wire but not acceptable for this call.
+    ///
+    /// Hybrid-flow receivers return this when an inbound [`crate::IpcMessage`]
+    /// decodes and validates, then turns out to be a different variant than the
+    /// method accepts. The frame is already consumed; it is not dropped silently
+    /// and it is not retried.
+    #[error(transparent)]
+    Protocol(#[from] ProtocolError),
+}
+
+/// Structured-message protocol rejection.
+///
+/// This is distinct from transport failure ([`BackendError::CommunicationError`])
+/// and from payload validation ([`BackendError::InvalidInput`]).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ProtocolError {
+    /// The decoded message variant is not the one this call accepts.
+    #[error("unexpected IpcMessage variant `{found}`; expected {expected}")]
+    UnexpectedVariant {
+        /// Serde variant name that arrived (`Ping`, `Spikes`, …).
+        found: &'static str,
+        /// Serde variant name this call accepts.
+        expected: &'static str,
+    },
 }

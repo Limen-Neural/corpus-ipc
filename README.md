@@ -41,7 +41,7 @@ link those stacks.
 | Feature | Default | What it enables |
 | --- | --- | --- |
 | *(none)* | yes | Wire models (`IpcMessage`, batches, snapshots) and `RustBackend` |
-| `zmq` | no | `ZmqIpcBackend` (vendored libzmq via `zmq-sys`; needs a C++ compiler). `Send` + `Sync` via mutex-serialized SUB socket ownership; libzmq sockets themselves are `Send` + `!Sync`. |
+| `zmq` | no | Binary readout `ZmqIpcBackend`, plus structured `ZmqMessagePublisher` / `ZmqMessageSubscriber` / `ZmqTransportConfig` / `ZmqHybridFlowBackend` (vendored libzmq via `zmq-sys`; needs a C++ compiler). `Send` + `Sync` via mutex-serialized socket ownership; libzmq sockets themselves are `Send` + `!Sync`. |
 | `server` | no | `corpus_ipc_server` Axum 0.8 REST binary (`axum` + minimized `tokio`) |
 
 `tower` is not a direct crate dependency. Axum 0.8 depends on it unconditionally,
@@ -49,6 +49,35 @@ so it appears only when the optional `server` feature enables Axum. `serde_json`
 is a library dependency so the compatibility envelope can inspect `wire_version`
 before deserializing a payload. The server binary uses Axum's `Json` extractor
 (the `json` feature), which also depends on `serde_json`.
+
+### Three protocol surfaces
+
+These integrations do not share a framing, and none of them is a
+guaranteed-delivery bus:
+
+| Surface | Feature | What moves |
+| --- | --- | --- |
+| Structured ZeroMQ | `zmq` | One compact canonical JSON `WireEnvelope` of `IpcMessage` per ZeroMQ message. `ZmqMessagePublisher` binds, `ZmqMessageSubscriber` connects and subscribes to the full stream. `ZmqHybridFlowBackend` maps spikes and embeddings outbound and gradients and eligibility traces inbound through that pair. |
+| Binary readout | `zmq` | `ZmqIpcBackend` subscribes to `[i64 tick][N × f32 LE]` packets. It does not implement `HybridFlowBackend` and it does not parse `IpcMessage` JSON. |
+| REST | `server` | `corpus_ipc_server` wraps `IpcBackend` (`process_batch`, `initialize`, `save_state`, `reset`). It does not carry `IpcMessage` batches or binary readout frames. |
+
+Structured PUB/SUB is best-effort and at-most-once. There are no
+acknowledgements. Frames sent before a subscriber exists (slow joiner), and
+frames dropped at the send or receive high-water mark, are gone. `send`
+returning success means the local socket accepted the frame, not that a peer
+observed it. Control and config messages use that same contract. The default
+linger is `0`, so closing the socket discards unsent frames instead of waiting.
+A non-blocking receive with nothing queued returns a typed would-block error
+(`Ok(None)` on the hybrid-flow receive methods). Malformed JSON, an
+incompatible `wire_version`, an invalid payload, multipart or empty framing,
+and an unexpected inbound variant return typed errors; unexpected variants are
+not discarded quietly.
+
+`ZmqTransportConfig` carries the endpoint, send and receive high-water marks,
+linger, and reconnect interval / maximum. Those socket options are applied
+before bind or connect.
+
+The sections below describe the **binary readout** backend only.
 
 ### ZMQ backend concurrency
 
@@ -246,7 +275,10 @@ expectation for cross-language consumers.
   - `IpcBackend`, `HybridFlowBackend`
   - `BackendType` (`Rust`, `ZmqIpc`; deprecated `ZmqRuntime` still selects ZMQ)
   - `RustBackend`
-  - `ZmqIpcBackend` (when `zmq` feature enabled; mutex-serialized socket ownership)
+  - `ZmqIpcBackend` (when `zmq` feature enabled; binary readout; mutex-serialized socket ownership)
+  - `ZmqMessagePublisher`, `ZmqMessageSubscriber`, `ZmqTransportConfig`, `ZmqHybridFlowBackend` (when `zmq` feature enabled; canonical JSON envelopes)
+  - `ZmqMessageError`, `FramingFault` (structured-transport errors; `zmq` feature)
+  - `ProtocolError` (unexpected inbound `IpcMessage` variant)
   - Deprecated compatibility aliases: `RuntimeBackend`, `ZmqRuntimeBackend`
 - Models:
   - `IpcMessage` and all batch/config/trace/gradient payload structs

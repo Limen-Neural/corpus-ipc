@@ -65,12 +65,42 @@ pub use IpcBackend as RuntimeBackend;
 /// Optional high-level hybrid flow interface for message-oriented IPC backends.
 ///
 /// Backends that support structured spike/embedding exchange can implement this
-/// trait in addition to `IpcBackend`. It is optional; most simple
-/// backends only need `IpcBackend`.
+/// trait in addition to [`IpcBackend`]. It is optional; most simple backends
+/// only need [`IpcBackend`]. The trait stays domain-neutral: it has no
+/// service-specific methods, endpoint constants, or channel widths.
 ///
 /// This trait does not own the wire encoding. Implementors that speak JSON
 /// should decode inbound bytes with [`crate::decode_ipc_message_json`] so
-/// schema versions are classified before a payload is used.
+/// schema versions are classified before a payload is used, then apply
+/// [`crate::Validate`].
+///
+/// # Message coverage
+///
+/// | Method | `IpcMessage` variant |
+/// | --- | --- |
+/// | [`Self::send_spikes`] | `Spikes` |
+/// | [`Self::send_embeddings`] | `Embeddings` |
+/// | [`Self::try_receive_gradients`] | `GradientUpdate` |
+/// | [`Self::try_receive_traces`] | `EligibilityTraces` |
+///
+/// Stimuli, neuromodulators, loss, config, and control variants are real
+/// [`crate::IpcMessage`] values and travel on a generic structured transport.
+/// They are not methods of this trait. A receive call that observes one of
+/// them returns [`BackendError::Protocol`] with
+/// [`crate::ProtocolError::UnexpectedVariant`] instead of discarding the frame.
+///
+/// With the `zmq` feature, `ZmqHybridFlowBackend` is the in-repository
+/// adapter. It delegates framing to `ZmqMessagePublisher` /
+/// `ZmqMessageSubscriber` (one canonical JSON envelope per ZeroMQ message).
+/// `ZmqIpcBackend`, the binary readout subscriber, does not implement this trait.
+///
+/// # Errors
+///
+/// `Ok(None)` from a receive method means no inbound message is available
+/// right now. [`BackendError::Protocol`] means a different variant arrived and
+/// was consumed. [`BackendError::InvalidInput`] means the payload failed
+/// validation. [`BackendError::CommunicationError`] covers framing, version,
+/// and transport failures.
 pub trait HybridFlowBackend: Send + Sync {
     /// Send a spike batch over the transport.
     fn send_spikes(&mut self, spikes: SpikeBatch) -> Result<(), BackendError>;
@@ -79,11 +109,17 @@ pub trait HybridFlowBackend: Send + Sync {
     fn send_embeddings(&mut self, embeddings: EmbeddingBatch) -> Result<(), BackendError>;
 
     /// Try receiving a gradient batch without blocking.
-    /// Returns `Ok(Some(batch))` when data is available, `Ok(None)` when the
-    /// channel is empty, or `Err` on transport failure.
+    ///
+    /// Returns `Ok(Some(batch))` when a `GradientUpdate` is available,
+    /// `Ok(None)` when the channel is empty, [`BackendError::Protocol`] when
+    /// a different variant arrived, or another [`BackendError`] on transport
+    /// or validation failure.
     fn try_receive_gradients(&mut self) -> Result<Option<GradientBatch>, BackendError>;
 
     /// Try receiving an eligibility trace batch without blocking.
+    ///
+    /// Same outcomes as [`Self::try_receive_gradients`], accepting only
+    /// `EligibilityTraces`.
     fn try_receive_traces(&mut self) -> Result<Option<TraceBatch>, BackendError>;
 }
 

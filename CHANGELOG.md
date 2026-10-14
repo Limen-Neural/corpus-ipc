@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Structured ZeroMQ `IpcMessage` transport behind the `zmq` feature (LIM-1278,
+  consolidating LIM-1330). `ZmqMessagePublisher` binds and `ZmqMessageSubscriber`
+  connects; each message is one compact canonical JSON `WireEnvelope` of
+  `IpcMessage`. The publisher validates before `encode_canonical_ipc_message`.
+  The subscriber decodes with `decode_ipc_message_json` and `Validate`.
+  `ZmqTransportConfig` sets endpoint, send/receive high-water marks, linger, and
+  reconnect limits before bind/connect. `ZmqHybridFlowBackend` implements
+  `HybridFlowBackend` on that pair: spikes and embeddings go out, gradients and
+  eligibility traces come in, and any other inbound variant is
+  `BackendError::Protocol` rather than a silent drop. PUB/SUB stays
+  best-effort and at-most-once (slow-joiner loss, high-water-mark loss, no
+  acknowledgements), including for control and config messages. `ZmqIpcBackend`
+  remains the separate binary `[i64 tick][N × f32 LE]` readout subscriber and
+  does not implement `HybridFlowBackend`. Socket ownership stays
+  mutex-serialized `Send` + `Sync` with no `unsafe impl Sync`.
+
 - **v0.2 REST contract** for `corpus_ipc_server` (feature `server`), now on
   Axum 0.8 (LIM-1329). The router lives in `corpus_ipc::server::router` so it
   can be exercised in-process without binding a socket; the binary is a thin
@@ -25,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   floats (`CORPUS_IPC_ZMQ_MAX_READOUT_FLOATS` override).
 
 ### Changed
+
+- `BackendError` gains `Protocol(ProtocolError)` so a hybrid-flow receiver can
+  report an unexpected `IpcMessage` variant without overloading transport or
+  validation errors. Exhaustive matches on `BackendError` need a new arm. Wire
+  version stays 1. The REST mapper still treats this arm as a backend failure
+  (HTTP 502); the router does not expose hybrid-flow sockets.
 
 - **0.1 REST → v0.2 REST migration (not wire-compatible).** The 0.1 server
   answered every application-level result with HTTP 200 and
