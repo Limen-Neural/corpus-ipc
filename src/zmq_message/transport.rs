@@ -41,6 +41,15 @@ pub enum ZmqMessageError {
     #[error("canonical encoding failed: {0}")]
     Encode(CanonicalEncodeError),
 
+    /// The encoded frame is larger than [`STRUCTURED_MAX_FRAME_BYTES`].
+    #[error("structured frame is too large: {actual} bytes (maximum {max} bytes)")]
+    FrameTooLarge {
+        /// Encoded length in bytes.
+        actual: usize,
+        /// [`STRUCTURED_MAX_FRAME_BYTES`] as `usize`.
+        max: usize,
+    },
+
     /// The frame was not an acceptable [`crate::WireEnvelope`] or legacy payload.
     #[error("envelope decode failed: {0}")]
     Envelope(#[from] crate::EnvelopeError),
@@ -171,13 +180,22 @@ fn invalid_config(message: &'static str) -> ZmqMessageError {
     ZmqMessageError::InvalidConfig(message)
 }
 
+pub(super) fn ensure_frame_fits(len: usize) -> Result<(), ZmqMessageError> {
+    let max = usize::try_from(STRUCTURED_MAX_FRAME_BYTES).unwrap_or(usize::MAX);
+    if len > max {
+        return Err(ZmqMessageError::FrameTooLarge { actual: len, max });
+    }
+    Ok(())
+}
+
 /// Largest structured frame a publisher or subscriber will accept (`ZMQ_MAXMSGSIZE`).
 ///
-/// 96 MiB covers a [`crate::ProtocolLimits::DEFAULT`] gradient batch whose
-/// `layer_id` values sit at the string cap, plus ASCII JSON framing. A larger
-/// peer frame is rejected by libzmq before [`zmq::Socket::recv_bytes`]
-/// allocates it.
-pub const STRUCTURED_MAX_FRAME_BYTES: i64 = 96 * 1024 * 1024;
+/// 512 MiB covers a [`crate::ProtocolLimits::DEFAULT`] gradient batch of 65_536
+/// layer ids at the 1_024-byte string cap when every byte is JSON-escaped
+/// (`\u00XX`), plus row framing and the aggregate float budget. [`ZmqMessagePublisher::send`]
+/// rejects a larger encoded frame before it hits the socket. libzmq applies the
+/// same cap on receive, before [`zmq::Socket::recv_bytes`] allocates the frame.
+pub const STRUCTURED_MAX_FRAME_BYTES: i64 = 512 * 1024 * 1024;
 
 /// Exclusive owner of a libzmq socket.
 ///
@@ -343,12 +361,14 @@ impl ZmqMessagePublisher {
     /// Validate `message`, encode one canonical envelope, and send it as one frame.
     ///
     /// A closed socket returns [`ZmqMessageError::Closed`] before payload
-    /// validation. The explicit [`Validate`] call stays in front of
-    /// [`encode_canonical_ipc_message`], which validates again.
+    /// validation. An encoded frame larger than [`STRUCTURED_MAX_FRAME_BYTES`]
+    /// returns [`ZmqMessageError::FrameTooLarge`]. The explicit [`Validate`]
+    /// call stays in front of [`encode_canonical_ipc_message`], which validates again.
     pub fn send(&self, message: &IpcMessage) -> Result<(), ZmqMessageError> {
         self.require_open()?;
         message.validate()?;
         let bytes = encode_canonical_ipc_message(message).map_err(ZmqMessageError::Encode)?;
+        ensure_frame_fits(bytes.len())?;
         self.send_bytes(&bytes)
     }
 
@@ -450,6 +470,10 @@ impl ZmqMessageSubscriber {
     /// Drop the socket. Idempotent. Further [`Self::try_recv`] calls return [`ZmqMessageError::Closed`].
     pub fn close(&self) {
         *lock_socket(&self.socket) = None;
+    }
+
+    pub(super) fn is_closed(&self) -> bool {
+        lock_socket(&self.socket).is_none()
     }
 
     /// Live socket options after connect. See [`ZmqMessagePublisher::socket_options_for_tests`].

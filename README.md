@@ -73,7 +73,8 @@ incompatible `wire_version`, an invalid payload, multipart or empty framing,
 and an unexpected inbound variant return typed errors; unexpected variants are
 not discarded quietly. The other supported inbound variant (a gradient while
 the caller is receiving traces, or a trace while receiving gradients) is held
-for its own method. A high-water mark of `0` is unlimited, matching libzmq.
+for its own method, one message per variant. A second sibling before that
+slot is read returns an error and consumes the new frame. A high-water mark of `0` is unlimited, matching libzmq.
 Structured sockets also set `ZMQ_MAXMSGSIZE` so one peer frame cannot allocate
 without a bound.
 

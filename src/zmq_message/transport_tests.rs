@@ -61,6 +61,17 @@ fn config_check_rejects_each_constraint() {
 }
 
 #[test]
+fn oversized_encoded_frames_are_rejected_before_send() {
+    assert!(ensure_frame_fits(0).is_ok());
+    assert!(ensure_frame_fits(STRUCTURED_MAX_FRAME_BYTES as usize).is_ok());
+    let err = ensure_frame_fits(usize::MAX).unwrap_err();
+    assert!(
+        matches!(err, ZmqMessageError::FrameTooLarge { .. }),
+        "{err}"
+    );
+}
+
+#[test]
 fn send_and_transport_errors_map_without_a_socket() {
     assert!(map_send(Ok(())).is_ok());
     assert!(matches!(

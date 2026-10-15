@@ -140,6 +140,18 @@ fn invalid_payload_fails_validation_on_decode() {
     ));
 }
 
+fn assert_subscriber_drains_to_idle(subscriber: &ZmqMessageSubscriber) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        match subscriber.try_recv() {
+            Err(ZmqMessageError::WouldBlock) => return,
+            Err(ZmqMessageError::UnexpectedFraming(FramingFault::Multipart)) => continue,
+            other => panic!("subscriber did not go idle: {other:?}"),
+        }
+    }
+    panic!("timed out draining multipart leftovers");
+}
+
 #[test]
 fn multipart_and_empty_frames_are_framing_errors() {
     let endpoint = unique_endpoint();
@@ -163,10 +175,8 @@ fn multipart_and_empty_frames_are_framing_errors() {
         err,
         ZmqMessageError::UnexpectedFraming(FramingFault::Multipart)
     ));
-    assert!(matches!(
-        subscriber.try_recv(),
-        Err(ZmqMessageError::WouldBlock)
-    ));
+    // `recv_until_error` republishes, so another multipart may already be queued.
+    assert_subscriber_drains_to_idle(&subscriber);
 
     let endpoint = unique_endpoint();
     let publisher = raw_publisher(&endpoint);

@@ -71,7 +71,8 @@ impl ZmqHybridFlowBackend {
     }
 
     /// Close both sockets. Later trait calls return [`BackendError::CommunicationError`],
-    /// including a send whose payload would not validate.
+    /// including a send whose payload would not validate. A later receive
+    /// discards any held sibling instead of returning it.
     pub fn close(&self) {
         self.outbound.close();
         self.inbound.close();
@@ -134,10 +135,21 @@ fn as_trace(message: IpcMessage) -> Result<TraceBatch, BackendError> {
 
 impl ZmqHybridFlowBackend {
     fn pull(&mut self, want: Want, extra: bool) -> Result<Option<IpcMessage>, BackendError> {
+        if self.inbound.is_closed() {
+            self.drop_held();
+            return Err(BackendError::CommunicationError(
+                ZmqMessageError::Closed.to_string(),
+            ));
+        }
         if let Some(message) = self.take_pending(want) {
             return Ok(Some(message));
         }
         self.read_or_defer(want, extra)
+    }
+
+    fn drop_held(&mut self) {
+        self.held_gradient = None;
+        self.held_trace = None;
     }
 
     fn take_pending(&mut self, want: Want) -> Option<IpcMessage> {
@@ -460,6 +472,16 @@ mod coverage {
         )
         .unwrap_err();
         assert!(matches!(err, ZmqMessageError::Setup(_)), "{err}");
+    }
+
+    #[test]
+    fn close_discards_a_held_sibling() {
+        let (mut backend, _peer, _outbound) = open_pair();
+        backend.held_trace = Some(sample_traces());
+        backend.close();
+        let err = backend.try_receive_traces().unwrap_err();
+        assert!(matches!(err, BackendError::CommunicationError(_)));
+        assert!(backend.held_trace.is_none());
     }
 
     #[test]

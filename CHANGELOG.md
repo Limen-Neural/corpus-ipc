@@ -26,8 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of being dropped. Any unrelated inbound variant is
   `BackendError::Protocol`. Identical outbound and inbound endpoints are
   rejected before either socket opens. A high-water mark of `0` is unlimited.
-  Inbound frames are capped (`ZMQ_MAXMSGSIZE`, 96 MiB). Multipart input is
-  drained up to eight extra frames and then the subscriber is closed.
+  Inbound frames are capped (`ZMQ_MAXMSGSIZE`, 512 MiB). A publisher rejects
+  an encoded frame above that cap before send. Multipart input is drained up
+  to eight extra frames. A message that fits in that drain returns a framing
+  error and leaves the subscriber open; frames still remaining after the drain
+  close the subscriber.
   Validation failures inside an envelope payload surface as `InvalidInput` on
   the hybrid adapter. A closed publisher reports `Closed` before payload
   validation. PUB/SUB stays
