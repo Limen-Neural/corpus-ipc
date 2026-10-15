@@ -7,13 +7,17 @@ edition = "2024"
 rust-version = "1.98.1"
 license = "MIT OR Apache-2.0"
 authors = ["Raul Cardenas Montoya <montoyaraul34@gmail.com>"]
-description = "Inter-Process Communication (IPC) library for bridging Rust to external compute engines via ZeroMQ."
+description = "Spike and neuromodulator wire protocol and IPC transports for Limen-Neural SNN runtimes."
 repository = "https://github.com/Limen-Neural/corpus-ipc"
 homepage = "https://github.com/Limen-Neural/corpus-ipc"
 documentation = "https://docs.rs/corpus-ipc"
 readme = "README.md"
-keywords = ["ipc", "zmq", "ffi", "hpc", "compute"]
-categories = ["science", "network-programming", "api-bindings"]
+keywords = ["snn", "neuromorphic", "spiking", "ipc", "zmq"]
+# science::neuroscience is the crates.io category for brain/nervous-system
+# research tools. encoding covers the canonical wire format. network-programming
+# covers the optional ZeroMQ and HTTP transports. api-bindings does not fit:
+# this crate defines the protocol rather than wrapping an external API.
+categories = ["science::neuroscience", "network-programming", "encoding"]
 # crates.io surface: explicit allow-list. Only consumer-relevant material
 # ships: library/server sources, README, CHANGELOG, licenses, and the
 # normative wire-encoding spec linked from README. (Cargo always includes

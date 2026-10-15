@@ -2,7 +2,7 @@
 
 //! # corpus-ipc
 //!
-//! Inter-Process Communication (IPC) library for bridging Rust to external compute engines.
+//! Spike and neuromodulator wire protocol and IPC transports for Limen-Neural SNN runtimes.
 //!
 //! Repository: <https://github.com/Limen-Neural/corpus-ipc>
 //!

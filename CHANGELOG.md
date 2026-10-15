@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ZmqTransportConfig` sets endpoint, send/receive high-water marks, linger, and
   reconnect limits before bind/connect. The reconnect cap must be at least the
   reconnect interval; libzmq ignores a smaller cap. The publisher and subscriber
-  retain the ZeroMQ context until the socket is closed.   `ZmqHybridFlowBackend` implements
+  retain the ZeroMQ context until the socket is closed. `ZmqHybridFlowBackend` implements
   `HybridFlowBackend` on that pair: spikes and embeddings go out, gradients and
   eligibility traces come in. The other of those two inbound variants is held
   for its receiver; a second held sibling returns `CommunicationError` instead
@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validation errors. Exhaustive matches on `BackendError` need a new arm. Wire
   version stays 1. The REST mapper still treats this arm as a backend failure
   (HTTP 502); the router does not expose hybrid-flow sockets.
+
+- crates.io metadata now describes the spike and neuromodulator wire protocol
+  (description, keywords `snn` / `neuromorphic` / `spiking` / `ipc` / `zmq`,
+  categories `science::neuroscience`, `network-programming`, `encoding`).
+  The README intro and crate-level docs use the same sentence. No API change
+  and no version bump (GitHub #53, LIM-1524).
 
 - **0.1 REST → v0.2 REST migration (not wire-compatible).** The 0.1 server
   answered every application-level result with HTTP 200 and

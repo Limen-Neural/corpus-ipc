@@ -10,9 +10,9 @@
 [![Qlty maintainability](https://img.shields.io/badge/maintainability-Qlty-6C47FF)](https://qlty.sh/gh/Limen-Neural/projects/corpus-ipc)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-Inter-Process Communication (IPC) library for bridging Rust to external compute engines.
+Spike and neuromodulator wire protocol and IPC transports for Limen-Neural SNN runtimes.
 
-`corpus-ipc` is the schema and transport layer for cross-process compute workflows. It provides backend abstractions for local/native execution and optional ZeroMQ IPC, plus canonical wire message models used across services.
+`corpus-ipc` is the schema and transport layer for those runtimes. It provides backend abstractions for local/native execution and optional ZeroMQ IPC, plus canonical wire message models used across services.
 
 ## Features
 
