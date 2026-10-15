@@ -238,20 +238,37 @@ fn open_socket(
     // Reconnect and queue options must be set before bind/connect. libzmq
     // reads them when it establishes the socket, not on a later setsockopt.
     apply_options(&socket, config)?;
-    match &mode {
-        SocketMode::Bind => socket
-            .bind(&config.endpoint)
-            .map_err(|err| ZmqMessageError::Setup(format!("bind {}: {err}", config.endpoint)))?,
-        SocketMode::Connect => {
-            socket
-                .set_subscribe(b"")
-                .map_err(|err| ZmqMessageError::Setup(format!("subscribe: {err}")))?;
-            socket.connect(&config.endpoint).map_err(|err| {
-                ZmqMessageError::Setup(format!("connect {}: {err}", config.endpoint))
-            })?;
-        }
-    }
+    attach_socket(&socket, config, mode)?;
     Ok(ExclusiveSocket { socket })
+}
+
+fn attach_socket(
+    socket: &zmq::Socket,
+    config: &ZmqTransportConfig,
+    mode: SocketMode,
+) -> Result<(), ZmqMessageError> {
+    match mode {
+        SocketMode::Bind => bind_socket(socket, config),
+        SocketMode::Connect => connect_socket(socket, config),
+    }
+}
+
+fn bind_socket(socket: &zmq::Socket, config: &ZmqTransportConfig) -> Result<(), ZmqMessageError> {
+    socket
+        .bind(&config.endpoint)
+        .map_err(|err| ZmqMessageError::Setup(format!("bind {}: {err}", config.endpoint)))
+}
+
+fn connect_socket(
+    socket: &zmq::Socket,
+    config: &ZmqTransportConfig,
+) -> Result<(), ZmqMessageError> {
+    socket
+        .set_subscribe(b"")
+        .map_err(|err| ZmqMessageError::Setup(format!("subscribe: {err}")))?;
+    socket
+        .connect(&config.endpoint)
+        .map_err(|err| ZmqMessageError::Setup(format!("connect {}: {err}", config.endpoint)))
 }
 
 fn lock_socket(slot: &Mutex<Option<ExclusiveSocket>>) -> MutexGuard<'_, Option<ExclusiveSocket>> {
@@ -392,22 +409,12 @@ impl ZmqMessageSubscriber {
     fn recv_frame(&self) -> Result<Vec<u8>, ZmqMessageError> {
         let mut guard = lock_socket(&self.socket);
         let socket = guard.as_mut().ok_or(ZmqMessageError::Closed)?;
-        let bytes = match socket.recv_bytes(zmq::DONTWAIT) {
-            Ok(bytes) => bytes,
-            Err(zmq::Error::EAGAIN) => return Err(ZmqMessageError::WouldBlock),
-            Err(err) => return Err(ZmqMessageError::Transport(err.to_string())),
-        };
-        if socket
-            .rcvmore()
-            .map_err(|err| ZmqMessageError::Transport(err.to_string()))?
-        {
+        let bytes = read_frame(socket)?;
+        if more_frames(socket)? {
             drain_multipart(socket)?;
             return Err(ZmqMessageError::UnexpectedFraming(FramingFault::Multipart));
         }
-        if bytes.is_empty() {
-            return Err(ZmqMessageError::UnexpectedFraming(FramingFault::Empty));
-        }
-        Ok(bytes)
+        non_empty_frame(bytes)
     }
 
     /// Drop the socket. Idempotent. Further [`Self::try_recv`] calls return [`ZmqMessageError::Closed`].
@@ -424,6 +431,27 @@ impl ZmqMessageSubscriber {
             .option_snapshot()
             .map_err(|err| ZmqMessageError::Transport(err.to_string()))
     }
+}
+
+fn read_frame(socket: &mut ExclusiveSocket) -> Result<Vec<u8>, ZmqMessageError> {
+    match socket.recv_bytes(zmq::DONTWAIT) {
+        Ok(bytes) => Ok(bytes),
+        Err(zmq::Error::EAGAIN) => Err(ZmqMessageError::WouldBlock),
+        Err(err) => Err(ZmqMessageError::Transport(err.to_string())),
+    }
+}
+
+fn more_frames(socket: &mut ExclusiveSocket) -> Result<bool, ZmqMessageError> {
+    socket
+        .rcvmore()
+        .map_err(|err| ZmqMessageError::Transport(err.to_string()))
+}
+
+fn non_empty_frame(bytes: Vec<u8>) -> Result<Vec<u8>, ZmqMessageError> {
+    if bytes.is_empty() {
+        return Err(ZmqMessageError::UnexpectedFraming(FramingFault::Empty));
+    }
+    Ok(bytes)
 }
 
 impl Drop for ZmqMessageSubscriber {

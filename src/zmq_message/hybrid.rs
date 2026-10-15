@@ -181,10 +181,6 @@ mod coverage {
     use std::time::{Duration, Instant};
 
     use super::*;
-    use crate::{
-        ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate,
-        NeuromodulatorSnapshot, SpikeBatch, SpikeEvent, StimulusBatch, TraceBatch, TraceData,
-    };
 
     fn endpoint() -> String {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -195,96 +191,49 @@ mod coverage {
         )
     }
 
-    fn named_messages() -> Vec<(&'static str, IpcMessage)> {
-        let mut config = std::collections::HashMap::new();
-        config.insert("gain".to_string(), ConfigValue::Float(0.5));
-        vec![
-            (
-                "Spikes",
-                IpcMessage::Spikes(SpikeBatch {
-                    session_id: None,
-                    batch_id: 1,
-                    timestamp: 0,
-                    spikes: vec![SpikeEvent {
-                        channel: 1,
-                        time: 1,
-                        strength: 0.5,
-                    }],
-                    metadata: None,
-                }),
-            ),
-            (
-                "Embeddings",
-                IpcMessage::Embeddings(EmbeddingBatch {
-                    session_id: None,
-                    batch_id: 1,
-                    embedding: vec![0.5],
-                    sequence_length: 1,
-                }),
-            ),
-            (
-                "Stimuli",
-                IpcMessage::Stimuli(StimulusBatch {
-                    session_id: None,
-                    batch_id: 1,
-                    timestamp: 0,
-                    values: vec![0.5],
-                    valid_mask: None,
-                    metadata: None,
-                }),
-            ),
-            (
-                "Neuromodulators",
-                IpcMessage::Neuromodulators(NeuromodulatorSnapshot {
-                    tick: 1,
-                    dopamine: 0.25,
-                    cortisol: 0.5,
-                    acetylcholine: 0.75,
-                    tempo: 1.0,
-                }),
-            ),
-            ("Loss", IpcMessage::Loss(0.25)),
-            (
-                "ConfigUpdate",
-                IpcMessage::ConfigUpdate(ConfigPayload {
-                    session_id: None,
-                    config,
-                }),
-            ),
-            (
-                "GradientUpdate",
-                IpcMessage::GradientUpdate(GradientBatch {
-                    session_id: "session".to_string(),
-                    batch_id: 1,
-                    gradients: vec![GradientUpdate {
-                        layer_id: "layer".to_string(),
-                        gradients: vec![0.5],
-                        eligibility_trace: None,
-                    }],
-                }),
-            ),
-            (
-                "EligibilityTraces",
-                IpcMessage::EligibilityTraces(TraceBatch {
-                    session_id: "session".to_string(),
-                    batch_id: 1,
-                    traces: vec![TraceData {
-                        channel_id: 1,
-                        trace_value: 0.25,
-                        last_spike_time: 1,
-                    }],
-                }),
-            ),
-            ("TrainingComplete", IpcMessage::TrainingComplete),
-            ("Shutdown", IpcMessage::Shutdown),
-            ("Ping", IpcMessage::Ping),
-        ]
+    fn decoded(json: &str) -> IpcMessage {
+        serde_json::from_str(json).unwrap_or_else(|err| panic!("{json}: {err}"))
     }
 
     #[test]
     fn every_variant_name_is_stable() {
         assert_hybrid_send_sync();
-        for (expected, message) in named_messages() {
+        let cases = [
+            (
+                "Spikes",
+                r#"{"Spikes":{"session_id":null,"batch_id":1,"timestamp":0,"spikes":[{"channel":1,"time":1,"strength":0.5}],"metadata":null}}"#,
+            ),
+            (
+                "Embeddings",
+                r#"{"Embeddings":{"session_id":null,"batch_id":1,"embedding":[0.5],"sequence_length":1}}"#,
+            ),
+            (
+                "Stimuli",
+                r#"{"Stimuli":{"session_id":null,"batch_id":1,"timestamp":0,"values":[0.5],"valid_mask":null,"metadata":null}}"#,
+            ),
+            (
+                "Neuromodulators",
+                r#"{"Neuromodulators":{"tick":1,"dopamine":0.25,"cortisol":0.5,"acetylcholine":0.75,"tempo":1.0}}"#,
+            ),
+            ("Loss", r#"{"Loss":0.25}"#),
+            (
+                "ConfigUpdate",
+                r#"{"ConfigUpdate":{"session_id":null,"config":{"gain":0.5}}}"#,
+            ),
+            (
+                "GradientUpdate",
+                r#"{"GradientUpdate":{"session_id":"session","batch_id":1,"gradients":[{"layer_id":"layer","gradients":[0.5],"eligibility_trace":null}]}}"#,
+            ),
+            (
+                "EligibilityTraces",
+                r#"{"EligibilityTraces":{"session_id":"session","batch_id":1,"traces":[{"channel_id":1,"trace_value":0.25,"last_spike_time":1}]}}"#,
+            ),
+            ("TrainingComplete", r#""TrainingComplete""#),
+            ("Shutdown", r#""Shutdown""#),
+            ("Ping", r#""Ping""#),
+        ];
+        for (expected, json) in cases {
+            let message = decoded(json);
             assert_eq!(variant_name(&message), expected);
             assert_eq!(
                 payload_variant(&message).or(control_variant(&message)),
@@ -317,34 +266,20 @@ mod coverage {
         }
     }
 
-    fn publish_until_gradient_outcome(
+    fn publish_until<T>(
         backend: &mut ZmqHybridFlowBackend,
         peer: &ZmqMessagePublisher,
         message: &IpcMessage,
-    ) -> Result<Option<GradientBatch>, BackendError> {
+        poll: impl Fn(&mut ZmqHybridFlowBackend) -> Result<Option<T>, BackendError>,
+    ) -> Result<Option<T>, BackendError> {
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
             peer.send(message).unwrap();
-            if let Some(outcome) = take_ready(backend.try_receive_gradients()) {
+            if let Some(outcome) = take_ready(poll(backend)) {
                 return outcome;
             }
         }
-        panic!("timed out waiting for a gradient outcome");
-    }
-
-    fn publish_until_trace_outcome(
-        backend: &mut ZmqHybridFlowBackend,
-        peer: &ZmqMessagePublisher,
-        message: &IpcMessage,
-    ) -> Result<Option<TraceBatch>, BackendError> {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline {
-            peer.send(message).unwrap();
-            if let Some(outcome) = take_ready(backend.try_receive_traces()) {
-                return outcome;
-            }
-        }
-        panic!("timed out waiting for a trace outcome");
+        panic!("timed out waiting for an inbound outcome");
     }
 
     #[test]
@@ -352,8 +287,10 @@ mod coverage {
         let (mut backend, peer, _outbound) = open_pair();
         assert_eq!(format!("{backend:?}"), "ZmqHybridFlowBackend");
 
-        let ping =
-            publish_until_gradient_outcome(&mut backend, &peer, &IpcMessage::Ping).unwrap_err();
+        let ping = publish_until(&mut backend, &peer, &IpcMessage::Ping, |backend| {
+            backend.try_receive_gradients()
+        })
+        .unwrap_err();
         assert!(matches!(
             ping,
             BackendError::Protocol(ProtocolError::UnexpectedVariant {
@@ -362,8 +299,10 @@ mod coverage {
             })
         ));
 
-        let trace_ping =
-            publish_until_trace_outcome(&mut backend, &peer, &IpcMessage::Ping).unwrap_err();
+        let trace_ping = publish_until(&mut backend, &peer, &IpcMessage::Ping, |backend| {
+            backend.try_receive_traces()
+        })
+        .unwrap_err();
         assert!(matches!(
             trace_ping,
             BackendError::Protocol(ProtocolError::UnexpectedVariant {

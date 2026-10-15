@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -113,24 +114,39 @@ fn sample_traces() -> TraceBatch {
     }
 }
 
-fn send_if_due(publisher: &ZmqMessagePublisher, message: &IpcMessage, last_send: &mut Instant) {
+fn spin_until(mut step: impl FnMut() -> bool, label: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if step() {
+            return;
+        }
+    }
+    panic!("timed out waiting for {label}");
+}
+
+fn pace(last_send: &mut Instant, send: impl FnOnce()) {
     if last_send.elapsed() < Duration::from_millis(20) {
         return;
     }
-    publisher
-        .send(message)
-        .unwrap_or_else(|err| panic!("send failed: {err}"));
+    send();
     *last_send = Instant::now();
 }
 
-fn message_arrived(result: Result<IpcMessage, ZmqMessageError>, message: &IpcMessage) -> bool {
+fn idle_message(err: &ZmqMessageError) -> bool {
+    matches!(err, ZmqMessageError::WouldBlock)
+}
+
+fn progress<T, E: std::fmt::Display>(
+    result: Result<T, E>,
+    is_idle: impl Fn(&E) -> bool,
+) -> Result<Option<T>, E> {
     match result {
-        Ok(got) => &got == message,
-        Err(ZmqMessageError::WouldBlock) => {
+        Ok(value) => Ok(Some(value)),
+        Err(err) if is_idle(&err) => {
             thread::sleep(Duration::from_millis(1));
-            false
+            Ok(None)
         }
-        Err(err) => panic!("recv failed: {err}"),
+        Err(err) => Err(err),
     }
 }
 
@@ -139,15 +155,20 @@ fn expect_message(
     subscriber: &ZmqMessageSubscriber,
     message: &IpcMessage,
 ) {
-    let deadline = Instant::now() + Duration::from_secs(5);
     let mut last_send = Instant::now() - Duration::from_secs(1);
-    while Instant::now() < deadline {
-        send_if_due(publisher, message, &mut last_send);
-        if message_arrived(subscriber.try_recv(), message) {
-            return;
-        }
-    }
-    panic!("timed out waiting for {message:?}");
+    spin_until(
+        || {
+            pace(&mut last_send, || {
+                publisher
+                    .send(message)
+                    .unwrap_or_else(|err| panic!("send failed: {err}"));
+            });
+            progress(subscriber.try_recv(), idle_message)
+                .unwrap_or_else(|err| panic!("{err}"))
+                .is_some_and(|got| &got == message)
+        },
+        "the published message",
+    );
 }
 
 fn recv_until_error(
@@ -155,16 +176,22 @@ fn recv_until_error(
     subscriber: &ZmqMessageSubscriber,
     publish: impl Fn(&zmq::Socket),
 ) -> ZmqMessageError {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        publish(publisher);
-        match subscriber.try_recv() {
-            Err(ZmqMessageError::WouldBlock) => thread::sleep(Duration::from_millis(1)),
-            Err(err) => return err,
-            Ok(message) => panic!("malformed frame decoded as {message:?}"),
-        }
-    }
-    panic!("timed out waiting for a typed receive error");
+    let found = Cell::new(None);
+    spin_until(
+        || {
+            publish(publisher);
+            match progress(subscriber.try_recv(), idle_message) {
+                Ok(None) => false,
+                Ok(Some(message)) => panic!("malformed frame decoded as {message:?}"),
+                Err(err) => {
+                    found.set(Some(err));
+                    true
+                }
+            }
+        },
+        "a typed receive error",
+    );
+    found.into_inner().expect("typed receive error")
 }
 
 #[test]
@@ -277,24 +304,21 @@ fn slow_joiner_loss_drops_frames_sent_before_subscribe() {
     publisher.send(&IpcMessage::Loss(1.0)).unwrap();
 
     let subscriber = ZmqMessageSubscriber::connect(ZmqTransportConfig::new(&endpoint)).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
     let mut last_send = Instant::now() - Duration::from_secs(1);
-    while Instant::now() < deadline {
-        if last_send.elapsed() >= Duration::from_millis(20) {
-            publisher.send(&IpcMessage::Loss(2.0)).unwrap();
-            last_send = Instant::now();
-        }
-        match subscriber.try_recv() {
-            Ok(IpcMessage::Loss(value)) => {
-                assert_eq!(value, 2.0);
-                return;
+    spin_until(
+        || {
+            pace(&mut last_send, || {
+                publisher.send(&IpcMessage::Loss(2.0)).unwrap();
+            });
+            match progress(subscriber.try_recv(), idle_message) {
+                Ok(Some(IpcMessage::Loss(value))) => value == 2.0,
+                Ok(Some(other)) => panic!("unexpected message {other:?}"),
+                Ok(None) => false,
+                Err(err) => panic!("{err}"),
             }
-            Ok(other) => panic!("unexpected message {other:?}"),
-            Err(ZmqMessageError::WouldBlock) => thread::sleep(Duration::from_millis(1)),
-            Err(err) => panic!("{err}"),
-        }
-    }
-    panic!("timed out waiting for the post-subscribe frame");
+        },
+        "the post-subscribe frame",
+    );
 }
 
 #[test]
@@ -445,7 +469,7 @@ fn high_water_mark_pressure_drops_without_panic() {
     );
 }
 
-fn record_hwm_send(result: Result<(), ZmqMessageError>, accepted: &mut u32, blocked: &mut u32) {
+fn note_hwm_send(result: Result<(), ZmqMessageError>, accepted: &mut u32, blocked: &mut u32) {
     match result {
         Ok(()) => *accepted += 1,
         Err(ZmqMessageError::HighWaterMark) => *blocked += 1,
@@ -457,7 +481,7 @@ fn count_hwm_sends(publisher: &ZmqMessagePublisher) -> (u32, u32) {
     let mut accepted = 0_u32;
     let mut blocked = 0_u32;
     for index in 0..100 {
-        record_hwm_send(
+        note_hwm_send(
             publisher.send(&IpcMessage::Loss(index as f32)),
             &mut accepted,
             &mut blocked,
@@ -466,22 +490,14 @@ fn count_hwm_sends(publisher: &ZmqMessagePublisher) -> (u32, u32) {
     (accepted, blocked)
 }
 
-fn delivery_increment(result: Result<IpcMessage, ZmqMessageError>) -> u32 {
-    match result {
-        Ok(_) => 1,
-        Err(ZmqMessageError::WouldBlock) => {
-            thread::sleep(Duration::from_millis(1));
-            0
-        }
-        Err(err) => panic!("{err}"),
-    }
-}
-
 fn count_deliveries(subscriber: &ZmqMessageSubscriber) -> u32 {
     let mut delivered = 0_u32;
     let drain_deadline = Instant::now() + Duration::from_millis(200);
     while Instant::now() < drain_deadline {
-        delivered += delivery_increment(subscriber.try_recv());
+        let arrived = progress(subscriber.try_recv(), idle_message)
+            .unwrap_or_else(|err| panic!("{err}"))
+            .is_some();
+        delivered += u32::from(arrived);
     }
     delivered
 }
@@ -557,26 +573,6 @@ fn dispatch_outbound(pair: &mut HybridPair, message: &IpcMessage) {
     }
 }
 
-fn send_outbound_if_due(pair: &mut HybridPair, message: &IpcMessage, last_send: &mut Instant) {
-    if last_send.elapsed() < Duration::from_millis(20) {
-        return;
-    }
-    dispatch_outbound(pair, message);
-    *last_send = Instant::now();
-}
-
-fn expect_from_peer(pair: &mut HybridPair, message: &IpcMessage) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut last_send = Instant::now() - Duration::from_secs(1);
-    while Instant::now() < deadline {
-        send_outbound_if_due(pair, message, &mut last_send);
-        if message_arrived(pair.peer_out.try_recv(), message) {
-            return;
-        }
-    }
-    panic!("timed out waiting for peer to observe {message:?}");
-}
-
 #[test]
 fn hybrid_flow_uses_canonical_frames_for_spikes_and_embeddings() {
     let mut pair = hybrid_pair();
@@ -587,35 +583,44 @@ fn hybrid_flow_uses_canonical_frames_for_spikes_and_embeddings() {
     let message = IpcMessage::Spikes(spikes.clone());
     let expected = encode_canonical_ipc_message(&message).unwrap();
     let raw = raw_subscriber(&pair.outbound_endpoint);
-    expect_from_peer(&mut pair, &message);
+    let mut last_send = Instant::now() - Duration::from_secs(1);
+    spin_until(
+        || {
+            pace(&mut last_send, || dispatch_outbound(&mut pair, &message));
+            progress(pair.peer_out.try_recv(), idle_message)
+                .unwrap_or_else(|err| panic!("{err}"))
+                .is_some_and(|got| got.eq(&message))
+        },
+        "spike observation",
+    );
 
-    let embeddings = EmbeddingBatch {
+    let embeddings = IpcMessage::Embeddings(EmbeddingBatch {
         session_id: None,
         batch_id: 4,
         embedding: vec![0.5],
         sequence_length: 1,
-    };
-    expect_from_peer(&mut pair, &IpcMessage::Embeddings(embeddings));
+    });
+    spin_until(
+        || {
+            pace(&mut last_send, || dispatch_outbound(&mut pair, &embeddings));
+            progress(pair.peer_out.try_recv(), idle_message)
+                .unwrap_or_else(|err| panic!("{err}"))
+                .is_some_and(|got| got.eq(&embeddings))
+        },
+        "embedding observation",
+    );
 
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while Instant::now() < deadline {
-        pair.backend.send_spikes(spikes.clone()).unwrap();
-        if canonical_frame_arrived(raw.recv_bytes(zmq::DONTWAIT), &expected) {
-            return;
-        }
-    }
-    panic!("hybrid outbound bytes were not the canonical encoder output");
-}
-
-fn canonical_frame_arrived(result: Result<Vec<u8>, zmq::Error>, expected: &[u8]) -> bool {
-    match result {
-        Ok(frame) => frame == expected,
-        Err(zmq::Error::EAGAIN) => {
-            thread::sleep(Duration::from_millis(2));
-            false
-        }
-        Err(err) => panic!("{err}"),
-    }
+    spin_until(
+        || {
+            pair.backend.send_spikes(spikes.clone()).unwrap();
+            progress(raw.recv_bytes(zmq::DONTWAIT), |err| {
+                matches!(err, zmq::Error::EAGAIN)
+            })
+            .unwrap_or_else(|err| panic!("{err}"))
+            .is_some_and(|frame| frame == expected)
+        },
+        "canonical encoder bytes",
+    );
 }
 
 fn inbound_is_quiet(
@@ -643,95 +648,86 @@ fn settle_inbound(pair: &mut HybridPair) {
     }
 }
 
-fn send_peer_if_due(pair: &HybridPair, message: &IpcMessage, last_send: &mut Instant) {
-    if last_send.elapsed() < Duration::from_millis(20) {
-        return;
-    }
-    pair.peer_in.send(message).unwrap();
-    *last_send = Instant::now();
-}
-
-fn take_gradient(
-    result: Result<Option<GradientBatch>, crate::BackendError>,
-) -> Option<Result<Option<GradientBatch>, crate::BackendError>> {
-    match result {
-        Ok(None) => {
-            thread::sleep(Duration::from_millis(1));
-            None
-        }
-        other => Some(other),
-    }
+fn poll_peer<T>(
+    pair: &mut HybridPair,
+    message: &IpcMessage,
+    mut accept: impl FnMut(&mut HybridPair) -> Option<T>,
+    label: &str,
+) -> T {
+    let mut last_send = Instant::now() - Duration::from_secs(1);
+    let mut found = None;
+    spin_until(
+        || {
+            pace(&mut last_send, || pair.peer_in.send(message).unwrap());
+            if let Some(value) = accept(pair) {
+                found = Some(value);
+                return true;
+            }
+            false
+        },
+        label,
+    );
+    found.expect(label)
 }
 
 fn poll_gradients(pair: &mut HybridPair) -> Result<Option<GradientBatch>, crate::BackendError> {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut last_send = Instant::now() - Duration::from_secs(1);
     let message = IpcMessage::GradientUpdate(sample_gradients());
-    while Instant::now() < deadline {
-        send_peer_if_due(pair, &message, &mut last_send);
-        if let Some(outcome) = take_gradient(pair.backend.try_receive_gradients()) {
-            return outcome;
-        }
-    }
-    panic!("timed out waiting for a gradient");
-}
-
-fn ping_rejected(result: Result<Option<GradientBatch>, crate::BackendError>) -> bool {
-    match result {
-        Ok(None) => {
-            thread::sleep(Duration::from_millis(1));
-            false
-        }
-        Ok(Some(_)) => false,
-        Err(crate::BackendError::Protocol(ProtocolError::UnexpectedVariant {
-            found: "Ping",
-            expected: "GradientUpdate",
-        })) => true,
-        other => panic!("unexpected gradient outcome: {other:?}"),
-    }
+    poll_peer(
+        pair,
+        &message,
+        |pair| match pair.backend.try_receive_gradients() {
+            Ok(None) => {
+                thread::sleep(Duration::from_millis(1));
+                None
+            }
+            other => Some(other),
+        },
+        "a gradient",
+    )
 }
 
 fn wait_for_unexpected_ping(pair: &mut HybridPair) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut last_send = Instant::now() - Duration::from_secs(1);
-    while Instant::now() < deadline {
-        send_peer_if_due(pair, &IpcMessage::Ping, &mut last_send);
-        if ping_rejected(pair.backend.try_receive_gradients()) {
-            return;
-        }
-    }
-    panic!("timed out waiting for unexpected Ping");
-}
-
-fn trace_landed(result: Result<Option<TraceBatch>, crate::BackendError>) -> bool {
-    match result {
-        Ok(None) => {
-            thread::sleep(Duration::from_millis(1));
-            false
-        }
-        Ok(Some(batch)) => {
-            assert_eq!(batch, sample_traces());
-            true
-        }
-        Err(crate::BackendError::Protocol(ProtocolError::UnexpectedVariant {
-            found: "Ping" | "GradientUpdate",
-            ..
-        })) => false,
-        Err(err) => panic!("{err}"),
-    }
+    poll_peer(
+        pair,
+        &IpcMessage::Ping,
+        |pair| match pair.backend.try_receive_gradients() {
+            Err(crate::BackendError::Protocol(ProtocolError::UnexpectedVariant {
+                found: "Ping",
+                expected: "GradientUpdate",
+            })) => Some(()),
+            Ok(None) => {
+                thread::sleep(Duration::from_millis(1));
+                None
+            }
+            Ok(Some(_)) => None,
+            Err(err) => panic!("unexpected gradient outcome: {err:?}"),
+        },
+        "unexpected Ping",
+    );
 }
 
 fn wait_for_traces(pair: &mut HybridPair) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut last_send = Instant::now() - Duration::from_secs(1);
     let message = IpcMessage::EligibilityTraces(sample_traces());
-    while Instant::now() < deadline {
-        send_peer_if_due(pair, &message, &mut last_send);
-        if trace_landed(pair.backend.try_receive_traces()) {
-            return;
-        }
-    }
-    panic!("timed out waiting for eligibility traces");
+    poll_peer(
+        pair,
+        &message,
+        |pair| match pair.backend.try_receive_traces() {
+            Ok(Some(batch)) => {
+                assert_eq!(batch, sample_traces());
+                Some(())
+            }
+            Ok(None) => {
+                thread::sleep(Duration::from_millis(1));
+                None
+            }
+            Err(crate::BackendError::Protocol(ProtocolError::UnexpectedVariant {
+                found: "Ping" | "GradientUpdate",
+                ..
+            })) => None,
+            Err(err) => panic!("{err}"),
+        },
+        "eligibility traces",
+    );
 }
 
 #[test]
