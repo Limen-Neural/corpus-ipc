@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `IpcMessage`. The publisher validates before `encode_canonical_ipc_message`.
   The subscriber decodes with `decode_ipc_message_json` and `Validate`.
   `ZmqTransportConfig` sets endpoint, send/receive high-water marks, linger, and
-  reconnect limits before bind/connect. `ZmqHybridFlowBackend` implements
+  reconnect limits before bind/connect. The reconnect cap must be at least the
+  reconnect interval; libzmq ignores a smaller cap. The publisher and subscriber
+  retain the ZeroMQ context until the socket is closed. `ZmqHybridFlowBackend` implements
   `HybridFlowBackend` on that pair: spikes and embeddings go out, gradients and
   eligibility traces come in, and any other inbound variant is
   `BackendError::Protocol` rather than a silent drop. PUB/SUB stays
