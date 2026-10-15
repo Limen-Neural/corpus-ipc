@@ -17,9 +17,14 @@ use super::transport::{
 /// [`IpcMessage::EligibilityTraces`] received through [`ZmqMessageSubscriber`].
 /// Framing is not reimplemented here.
 ///
-/// Any other inbound variant returns [`BackendError::Protocol`]
-/// ([`ProtocolError::UnexpectedVariant`]). The frame is consumed; it is not
-/// discarded quietly and it is not pushed back onto the socket.
+/// The other supported inbound variant is held in a one-message slot and
+/// returned by its own method. A second sibling while that slot is full
+/// returns [`BackendError::CommunicationError`]; the new frame is consumed
+/// and the held frame stays. Any unrelated inbound variant returns
+/// [`BackendError::Protocol`] ([`ProtocolError::UnexpectedVariant`]). That
+/// frame is consumed; it is not discarded quietly and it is not pushed back
+/// onto the socket. Inbound validation failures surface as
+/// [`BackendError::InvalidInput`].
 ///
 /// This type does not implement [`crate::IpcBackend`]. Binary readouts stay on
 /// [`crate::ZmqIpcBackend`].
@@ -29,6 +34,8 @@ use super::transport::{
 pub struct ZmqHybridFlowBackend {
     outbound: ZmqMessagePublisher,
     inbound: ZmqMessageSubscriber,
+    held_gradient: Option<GradientBatch>,
+    held_trace: Option<TraceBatch>,
 }
 
 impl std::fmt::Debug for ZmqHybridFlowBackend {
@@ -48,12 +55,23 @@ impl ZmqHybridFlowBackend {
         outbound: ZmqTransportConfig,
         inbound: ZmqTransportConfig,
     ) -> Result<Self, ZmqMessageError> {
+        if outbound.endpoint == inbound.endpoint {
+            return Err(ZmqMessageError::InvalidConfig(
+                "outbound and inbound endpoints must differ",
+            ));
+        }
         let outbound = ZmqMessagePublisher::bind(outbound)?;
         let inbound = ZmqMessageSubscriber::connect(inbound)?;
-        Ok(Self { outbound, inbound })
+        Ok(Self {
+            outbound,
+            inbound,
+            held_gradient: None,
+            held_trace: None,
+        })
     }
 
-    /// Close both sockets. Later trait calls return [`BackendError::CommunicationError`].
+    /// Close both sockets. Later trait calls return [`BackendError::CommunicationError`],
+    /// including a send whose payload would not validate.
     pub fn close(&self) {
         self.outbound.close();
         self.inbound.close();
@@ -84,20 +102,118 @@ impl HybridFlowBackend for ZmqHybridFlowBackend {
     }
 
     fn try_receive_gradients(&mut self) -> Result<Option<GradientBatch>, BackendError> {
-        match self.poll_inbound()? {
-            None => Ok(None),
-            Some(IpcMessage::GradientUpdate(batch)) => Ok(Some(batch)),
-            Some(other) => Err(unexpected_variant(&other, "GradientUpdate")),
-        }
+        self.pull(Want::Gradient, false)?
+            .map(as_gradient)
+            .transpose()
     }
 
     fn try_receive_traces(&mut self) -> Result<Option<TraceBatch>, BackendError> {
-        match self.poll_inbound()? {
-            None => Ok(None),
-            Some(IpcMessage::EligibilityTraces(batch)) => Ok(Some(batch)),
-            Some(other) => Err(unexpected_variant(&other, "EligibilityTraces")),
+        self.pull(Want::Trace, false)?.map(as_trace).transpose()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Want {
+    Gradient,
+    Trace,
+}
+
+fn as_gradient(message: IpcMessage) -> Result<GradientBatch, BackendError> {
+    match message {
+        IpcMessage::GradientUpdate(batch) => Ok(batch),
+        other => Err(unexpected_variant(&other, "GradientUpdate")),
+    }
+}
+
+fn as_trace(message: IpcMessage) -> Result<TraceBatch, BackendError> {
+    match message {
+        IpcMessage::EligibilityTraces(batch) => Ok(batch),
+        other => Err(unexpected_variant(&other, "EligibilityTraces")),
+    }
+}
+
+impl ZmqHybridFlowBackend {
+    fn pull(&mut self, want: Want, extra: bool) -> Result<Option<IpcMessage>, BackendError> {
+        if let Some(message) = self.take_pending(want) {
+            return Ok(Some(message));
+        }
+        self.read_or_defer(want, extra)
+    }
+
+    fn take_pending(&mut self, want: Want) -> Option<IpcMessage> {
+        match want {
+            Want::Gradient => self.held_gradient.take().map(IpcMessage::GradientUpdate),
+            Want::Trace => self.held_trace.take().map(IpcMessage::EligibilityTraces),
         }
     }
+
+    fn read_or_defer(
+        &mut self,
+        want: Want,
+        extra: bool,
+    ) -> Result<Option<IpcMessage>, BackendError> {
+        let Some(message) = self.poll_inbound()? else {
+            return Ok(None);
+        };
+        self.keep(want, message, extra)
+    }
+
+    fn keep(
+        &mut self,
+        want: Want,
+        message: IpcMessage,
+        extra: bool,
+    ) -> Result<Option<IpcMessage>, BackendError> {
+        if is_wanted(want, &message) {
+            return Ok(Some(message));
+        }
+        self.defer_sibling(message, want)?;
+        self.after_defer(want, extra)
+    }
+
+    fn after_defer(&mut self, want: Want, extra: bool) -> Result<Option<IpcMessage>, BackendError> {
+        if extra {
+            return Ok(None);
+        }
+        self.read_or_defer(want, true)
+    }
+
+    fn defer_sibling(&mut self, message: IpcMessage, want: Want) -> Result<(), BackendError> {
+        match (want, message) {
+            (Want::Gradient, IpcMessage::EligibilityTraces(batch)) => {
+                store_one(&mut self.held_trace, batch, "eligibility trace")
+            }
+            (Want::Trace, IpcMessage::GradientUpdate(batch)) => {
+                store_one(&mut self.held_gradient, batch, "gradient")
+            }
+            (_, other) => Err(unexpected_variant(&other, wanted_name(want))),
+        }
+    }
+}
+
+fn is_wanted(want: Want, message: &IpcMessage) -> bool {
+    matches!(
+        (want, message),
+        (Want::Gradient, IpcMessage::GradientUpdate(_))
+            | (Want::Trace, IpcMessage::EligibilityTraces(_))
+    )
+}
+
+fn wanted_name(want: Want) -> &'static str {
+    match want {
+        Want::Gradient => "GradientUpdate",
+        Want::Trace => "EligibilityTraces",
+    }
+}
+
+fn store_one<T>(slot: &mut Option<T>, value: T, label: &str) -> Result<(), BackendError> {
+    if slot.is_some() {
+        return Err(BackendError::CommunicationError(format!(
+            "inbound {label} slot already holds a message"
+        )));
+    }
+    *slot = Some(value);
+    Ok(())
 }
 
 fn unexpected_variant(message: &IpcMessage, expected: &'static str) -> BackendError {
@@ -180,6 +296,7 @@ mod coverage {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
 
+    use super::super::tests::{sample_gradients, sample_traces};
     use super::*;
 
     fn endpoint() -> String {
@@ -266,6 +383,28 @@ mod coverage {
         }
     }
 
+    fn quiet_gradients(backend: &mut ZmqHybridFlowBackend) {
+        let started = Instant::now();
+        let mut quiet_since = Instant::now();
+        while started.elapsed() < Duration::from_millis(300) {
+            if gradient_is_quiet(backend, &mut quiet_since) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn gradient_is_quiet(backend: &mut ZmqHybridFlowBackend, quiet_since: &mut Instant) -> bool {
+        match backend.try_receive_gradients() {
+            Ok(None) => quiet_since.elapsed() >= Duration::from_millis(40),
+            Ok(Some(_)) => {
+                *quiet_since = Instant::now();
+                false
+            }
+            Err(err) => panic!("{err}"),
+        }
+    }
+
     fn publish_until<T>(
         backend: &mut ZmqHybridFlowBackend,
         peer: &ZmqMessagePublisher,
@@ -321,5 +460,76 @@ mod coverage {
         )
         .unwrap_err();
         assert!(matches!(err, ZmqMessageError::Setup(_)), "{err}");
+    }
+
+    #[test]
+    fn open_rejects_equal_endpoints() {
+        let shared = endpoint();
+        let err = ZmqHybridFlowBackend::open(
+            ZmqTransportConfig::new(&shared),
+            ZmqTransportConfig::new(shared),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            ZmqMessageError::InvalidConfig("outbound and inbound endpoints must differ")
+        ));
+    }
+
+    #[test]
+    fn batch_converters_reject_ping() {
+        assert!(matches!(
+            as_gradient(IpcMessage::Ping),
+            Err(BackendError::Protocol(_))
+        ));
+        assert!(matches!(
+            as_trace(IpcMessage::Ping),
+            Err(BackendError::Protocol(_))
+        ));
+    }
+
+    #[test]
+    fn a_full_sibling_slot_keeps_the_held_batch() {
+        let mut slot = Some(sample_traces());
+        let err = store_one(&mut slot, sample_traces(), "eligibility trace").unwrap_err();
+        assert!(matches!(err, BackendError::CommunicationError(_)));
+        assert!(slot.is_some());
+    }
+
+    #[test]
+    fn a_trace_ahead_of_a_gradient_stays_available() {
+        let (mut backend, peer, _outbound) = open_pair();
+        let trace = IpcMessage::EligibilityTraces(sample_traces());
+        let gradient = IpcMessage::GradientUpdate(sample_gradients());
+        publish_until(&mut backend, &peer, &gradient, |backend| {
+            backend.try_receive_gradients()
+        })
+        .unwrap()
+        .unwrap();
+        quiet_gradients(&mut backend);
+        peer.send(&trace).unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut got_gradient = None;
+        while Instant::now() < deadline && got_gradient.is_none() {
+            peer.send(&gradient).unwrap();
+            match backend.try_receive_gradients() {
+                Ok(Some(batch)) => got_gradient = Some(batch),
+                Ok(None) => std::thread::sleep(Duration::from_millis(1)),
+                Err(err) => panic!("{err}"),
+            }
+        }
+        assert_eq!(got_gradient, Some(sample_gradients()));
+        match backend.try_receive_traces() {
+            Ok(Some(batch)) => assert_eq!(batch, sample_traces()),
+            Ok(None) => {
+                let batch = publish_until(&mut backend, &peer, &trace, |backend| {
+                    backend.try_receive_traces()
+                })
+                .unwrap();
+                assert_eq!(batch, Some(sample_traces()));
+            }
+            Err(err) => panic!("{err}"),
+        }
     }
 }

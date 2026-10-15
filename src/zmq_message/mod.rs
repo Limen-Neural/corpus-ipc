@@ -29,8 +29,10 @@
 //!   the same delivery guarantee as every other variant: none.
 //! - **High-water mark.** When a peer's outbound or inbound queue is full,
 //!   libzmq drops further PUB frames. `send` still returns `Ok` for that drop.
-//!   If the socket reports `EAGAIN` on a non-blocking send, the error is
-//!   [`ZmqMessageError::HighWaterMark`].
+//!   A configured mark of `0` is unlimited. If the socket reports `EAGAIN` on
+//!   a non-blocking send, the error is [`ZmqMessageError::HighWaterMark`].
+//!   Inbound frames above [`STRUCTURED_MAX_FRAME_BYTES`] are rejected by
+//!   libzmq before this crate allocates them.
 //! - **Teardown.** The default linger is `0`, so `close` and `Drop` discard
 //!   unsent frames and return without waiting. A later `send` or `try_recv`
 //!   on a closed socket returns [`ZmqMessageError::Closed`]. Linger `-1`
@@ -51,7 +53,8 @@ mod transport;
 
 pub use hybrid::ZmqHybridFlowBackend;
 pub use transport::{
-    FramingFault, ZmqMessageError, ZmqMessagePublisher, ZmqMessageSubscriber, ZmqTransportConfig,
+    FramingFault, STRUCTURED_MAX_FRAME_BYTES, ZmqMessageError, ZmqMessagePublisher,
+    ZmqMessageSubscriber, ZmqTransportConfig,
 };
 
 #[cfg(test)]

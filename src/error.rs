@@ -2,11 +2,14 @@
 
 //! Backend error type.
 
-/// Errors that may be returned by any `IpcBackend` implementation.
+/// Errors returned by [`crate::IpcBackend`] and [`crate::HybridFlowBackend`].
 ///
 /// These cover initialization, processing, model persistence, IPC communication,
-/// and invalid caller input. The inner `String` carries a human-readable
-/// diagnostic (implementation-defined).
+/// invalid caller input, and structured-message protocol rejection. Most
+/// variants carry a human-readable `String`. [`BackendError::Protocol`] carries
+/// a [`ProtocolError`] so a hybrid-flow receiver can reject an unexpected
+/// [`crate::IpcMessage`] variant without overloading a transport or validation
+/// failure.
 #[derive(Debug, thiserror::Error)]
 pub enum BackendError {
     /// Backend failed to initialize (e.g. model load failure, ZMQ connect error).

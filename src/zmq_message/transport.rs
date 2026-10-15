@@ -72,16 +72,18 @@ pub enum ZmqMessageError {
 
 /// Endpoint and socket options for one structured PUB or SUB socket.
 ///
-/// Options are applied before `bind` or `connect`. High-water marks of `0`
-/// are legal and mean "do not queue". Linger `-1` means wait forever on close.
+/// Options are applied before `bind` or `connect`. A high-water mark of `0`
+/// is unlimited: libzmq does not treat `0` as an empty queue. Linger `-1`
+/// means wait forever on close. Inbound frames are capped at
+/// [`STRUCTURED_MAX_FRAME_BYTES`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZmqTransportConfig {
     /// ZeroMQ endpoint (`ipc://…` or `tcp://…`). The publisher binds it; the
     /// subscriber connects to it.
     pub endpoint: String,
-    /// `ZMQ_SNDHWM`. Must be `>= 0`.
+    /// `ZMQ_SNDHWM`. Must be `>= 0`. `0` means unlimited.
     pub send_hwm: i32,
-    /// `ZMQ_RCVHWM`. Must be `>= 0`.
+    /// `ZMQ_RCVHWM`. Must be `>= 0`. `0` means unlimited.
     pub receive_hwm: i32,
     /// `ZMQ_LINGER` in milliseconds. `-1` waits forever; `0` discards unsent
     /// frames on close. Must be `>= -1`.
@@ -169,6 +171,14 @@ fn invalid_config(message: &'static str) -> ZmqMessageError {
     ZmqMessageError::InvalidConfig(message)
 }
 
+/// Largest structured frame a publisher or subscriber will accept (`ZMQ_MAXMSGSIZE`).
+///
+/// 96 MiB covers a [`crate::ProtocolLimits::DEFAULT`] gradient batch whose
+/// `layer_id` values sit at the string cap, plus ASCII JSON framing. A larger
+/// peer frame is rejected by libzmq before [`zmq::Socket::recv_bytes`]
+/// allocates it.
+pub const STRUCTURED_MAX_FRAME_BYTES: i64 = 96 * 1024 * 1024;
+
 /// Exclusive owner of a libzmq socket.
 ///
 /// Inherits `Send` + `!Sync` from [`zmq::Socket`]. Callers reach it only
@@ -190,13 +200,14 @@ impl ExclusiveSocket {
         self.socket.get_rcvmore()
     }
 
-    fn option_snapshot(&self) -> zmq::Result<(i32, i32, i32, i32, i32)> {
+    fn option_snapshot(&self) -> zmq::Result<(i32, i32, i32, i32, i32, i64)> {
         Ok((
             self.socket.get_sndhwm()?,
             self.socket.get_rcvhwm()?,
             self.socket.get_linger()?,
             self.socket.get_reconnect_ivl()?,
             self.socket.get_reconnect_ivl_max()?,
+            self.socket.get_maxmsgsize()?,
         ))
     }
 }
@@ -222,6 +233,9 @@ fn apply_options(socket: &zmq::Socket, config: &ZmqTransportConfig) -> Result<()
     socket
         .set_reconnect_ivl_max(config.reconnect_ivl_max_ms)
         .map_err(|err| ZmqMessageError::Setup(format!("reconnect_ivl_max: {err}")))?;
+    socket
+        .set_maxmsgsize(STRUCTURED_MAX_FRAME_BYTES)
+        .map_err(|err| ZmqMessageError::Setup(format!("maxmsgsize: {err}")))?;
     Ok(())
 }
 
@@ -327,10 +341,22 @@ impl ZmqMessagePublisher {
     }
 
     /// Validate `message`, encode one canonical envelope, and send it as one frame.
+    ///
+    /// A closed socket returns [`ZmqMessageError::Closed`] before payload
+    /// validation. The explicit [`Validate`] call stays in front of
+    /// [`encode_canonical_ipc_message`], which validates again.
     pub fn send(&self, message: &IpcMessage) -> Result<(), ZmqMessageError> {
+        self.require_open()?;
         message.validate()?;
         let bytes = encode_canonical_ipc_message(message).map_err(ZmqMessageError::Encode)?;
         self.send_bytes(&bytes)
+    }
+
+    fn require_open(&self) -> Result<(), ZmqMessageError> {
+        if lock_socket(&self.socket).is_none() {
+            return Err(ZmqMessageError::Closed);
+        }
+        Ok(())
     }
 
     fn send_bytes(&self, bytes: &[u8]) -> Result<(), ZmqMessageError> {
@@ -344,9 +370,11 @@ impl ZmqMessagePublisher {
         *lock_socket(&self.socket) = None;
     }
 
-    /// Live socket options after bind: sndhwm, rcvhwm, linger, reconnect interval, reconnect max.
+    /// Live socket options after bind: sndhwm, rcvhwm, linger, reconnect interval, reconnect max, max frame.
     #[doc(hidden)]
-    pub fn socket_options_for_tests(&self) -> Result<(i32, i32, i32, i32, i32), ZmqMessageError> {
+    pub fn socket_options_for_tests(
+        &self,
+    ) -> Result<(i32, i32, i32, i32, i32, i64), ZmqMessageError> {
         let guard = lock_socket(&self.socket);
         let socket = guard.as_ref().ok_or(ZmqMessageError::Closed)?;
         socket
@@ -401,6 +429,10 @@ impl ZmqMessageSubscriber {
     /// [`ZmqMessageError::WouldBlock`] means `EAGAIN` (no message). Malformed
     /// JSON, an incompatible `wire_version`, an invalid payload, and multipart
     /// or empty framing return typed errors. A failed frame is consumed.
+    ///
+    /// Multipart messages are drained up to eight extra frames. If frames still
+    /// remain, the socket is closed so a later receive cannot resume
+    /// mid-message; that later call returns [`ZmqMessageError::Closed`].
     pub fn try_recv(&self) -> Result<IpcMessage, ZmqMessageError> {
         let bytes = self.recv_frame()?;
         decode_frame(&bytes)
@@ -408,13 +440,11 @@ impl ZmqMessageSubscriber {
 
     fn recv_frame(&self) -> Result<Vec<u8>, ZmqMessageError> {
         let mut guard = lock_socket(&self.socket);
-        let socket = guard.as_mut().ok_or(ZmqMessageError::Closed)?;
-        let bytes = read_frame(socket)?;
-        if more_frames(socket)? {
-            drain_multipart(socket)?;
-            return Err(ZmqMessageError::UnexpectedFraming(FramingFault::Multipart));
-        }
-        non_empty_frame(bytes)
+        let read = match guard.as_mut() {
+            Some(socket) => read_socket_frame(socket),
+            None => return Err(ZmqMessageError::Closed),
+        };
+        finish_read(&mut guard, read)
     }
 
     /// Drop the socket. Idempotent. Further [`Self::try_recv`] calls return [`ZmqMessageError::Closed`].
@@ -424,7 +454,9 @@ impl ZmqMessageSubscriber {
 
     /// Live socket options after connect. See [`ZmqMessagePublisher::socket_options_for_tests`].
     #[doc(hidden)]
-    pub fn socket_options_for_tests(&self) -> Result<(i32, i32, i32, i32, i32), ZmqMessageError> {
+    pub fn socket_options_for_tests(
+        &self,
+    ) -> Result<(i32, i32, i32, i32, i32, i64), ZmqMessageError> {
         let guard = lock_socket(&self.socket);
         let socket = guard.as_ref().ok_or(ZmqMessageError::Closed)?;
         socket
@@ -460,26 +492,105 @@ impl Drop for ZmqMessageSubscriber {
     }
 }
 
-fn drain_multipart(socket: &mut ExclusiveSocket) -> Result<(), ZmqMessageError> {
-    loop {
-        match socket.recv_bytes(zmq::DONTWAIT) {
-            Ok(_) => {}
-            Err(zmq::Error::EAGAIN) => return Ok(()),
-            Err(err) => return Err(ZmqMessageError::Transport(err.to_string())),
-        }
-        if !socket
-            .rcvmore()
-            .map_err(|err| ZmqMessageError::Transport(err.to_string()))?
-        {
-            return Ok(());
+enum SocketRead {
+    Frame(Vec<u8>),
+    Failed(ZmqMessageError),
+    Abandoned,
+}
+
+fn read_socket_frame(socket: &mut ExclusiveSocket) -> SocketRead {
+    match read_frame(socket) {
+        Ok(bytes) => assemble_frame(socket, bytes),
+        Err(err) => SocketRead::Failed(err),
+    }
+}
+
+fn assemble_frame(socket: &mut ExclusiveSocket, bytes: Vec<u8>) -> SocketRead {
+    match more_frames(socket) {
+        Ok(true) => after_multipart(socket),
+        Ok(false) => accept_single(bytes),
+        Err(err) => SocketRead::Failed(err),
+    }
+}
+
+fn accept_single(bytes: Vec<u8>) -> SocketRead {
+    match non_empty_frame(bytes) {
+        Ok(bytes) => SocketRead::Frame(bytes),
+        Err(err) => SocketRead::Failed(err),
+    }
+}
+
+fn after_multipart(socket: &mut ExclusiveSocket) -> SocketRead {
+    match drain_multipart(socket) {
+        Ok(false) => multipart_fault(),
+        Ok(true) => SocketRead::Abandoned,
+        Err(err) => SocketRead::Failed(err),
+    }
+}
+
+fn multipart_fault() -> SocketRead {
+    SocketRead::Failed(ZmqMessageError::UnexpectedFraming(FramingFault::Multipart))
+}
+
+fn finish_read(
+    slot: &mut Option<ExclusiveSocket>,
+    read: SocketRead,
+) -> Result<Vec<u8>, ZmqMessageError> {
+    match read {
+        SocketRead::Frame(bytes) => Ok(bytes),
+        SocketRead::Failed(err) => Err(err),
+        SocketRead::Abandoned => {
+            *slot = None;
+            Err(ZmqMessageError::UnexpectedFraming(FramingFault::Multipart))
         }
     }
+}
+
+/// Extra frames drained from one multipart message before the subscriber closes.
+pub(super) const MULTIPART_DRAIN_LIMIT: usize = 8;
+
+fn drain_multipart(socket: &mut ExclusiveSocket) -> Result<bool, ZmqMessageError> {
+    for _ in 0..MULTIPART_DRAIN_LIMIT {
+        if !next_part(socket)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn next_part(socket: &mut ExclusiveSocket) -> Result<bool, ZmqMessageError> {
+    match socket.recv_bytes(zmq::DONTWAIT) {
+        Ok(_) => more_frames(socket),
+        Err(zmq::Error::EAGAIN) => Ok(false),
+        Err(err) => Err(ZmqMessageError::Transport(err.to_string())),
+    }
+}
+
+const VALIDATION_MARKERS: [&str; 6] = [
+    "non_finite at `",
+    "out_of_range at `",
+    "length_mismatch at `",
+    "limit_exceeded at `",
+    "nested_metadata at `",
+    "duplicate_identifier at `",
+];
+
+fn is_validation_payload(err: &serde_json::Error) -> bool {
+    let text = err.to_string();
+    VALIDATION_MARKERS
+        .iter()
+        .any(|marker| text.contains(marker))
 }
 
 pub(super) fn map_transport_error(err: ZmqMessageError) -> crate::BackendError {
     match err {
         ZmqMessageError::Validation(err) => crate::BackendError::InvalidInput(err.to_string()),
         ZmqMessageError::Encode(CanonicalEncodeError::Validation(err)) => {
+            crate::BackendError::InvalidInput(err.to_string())
+        }
+        ZmqMessageError::Envelope(crate::EnvelopeError::Payload(err))
+            if is_validation_payload(&err) =>
+        {
             crate::BackendError::InvalidInput(err.to_string())
         }
         other => crate::BackendError::CommunicationError(other.to_string()),
@@ -518,136 +629,5 @@ mod not_sync {
 }
 
 #[cfg(test)]
-mod coverage {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    use super::*;
-    use crate::ValidationError;
-
-    fn endpoint() -> String {
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        format!(
-            "ipc:///tmp/corpus_ipc_zmq_cov_{}_{}.ipc",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed)
-        )
-    }
-
-    fn assert_invalid(config: &ZmqTransportConfig, expected: &str) {
-        match config.check() {
-            Err(ZmqMessageError::InvalidConfig(message)) => assert_eq!(message, expected),
-            other => panic!("expected invalid config, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn config_check_rejects_each_constraint() {
-        assert_invalid(&ZmqTransportConfig::new(""), "endpoint must be non-empty");
-        assert_invalid(
-            &ZmqTransportConfig::new("ipc://bad\0endpoint"),
-            "endpoint must not contain an interior null",
-        );
-
-        let mut config = ZmqTransportConfig::new("tcp://127.0.0.1:9");
-        config.send_hwm = -1;
-        assert_invalid(&config, "send_hwm must be >= 0");
-
-        config = ZmqTransportConfig::new("tcp://127.0.0.1:9");
-        config.receive_hwm = -1;
-        assert_invalid(&config, "receive_hwm must be >= 0");
-
-        config = ZmqTransportConfig::new("tcp://127.0.0.1:9");
-        config.linger_ms = -2;
-        assert_invalid(&config, "linger_ms must be >= -1");
-
-        config = ZmqTransportConfig::new("tcp://127.0.0.1:9");
-        config.reconnect_ivl_ms = 0;
-        assert_invalid(&config, "reconnect_ivl_ms must be > 0");
-
-        config = ZmqTransportConfig::new("tcp://127.0.0.1:9");
-        config.reconnect_ivl_max_ms = 0;
-        assert_invalid(&config, "reconnect_ivl_max_ms must be > 0");
-
-        config = ZmqTransportConfig::new("tcp://127.0.0.1:9");
-        config.reconnect_ivl_ms = 200;
-        config.reconnect_ivl_max_ms = 100;
-        assert_invalid(&config, "reconnect_ivl_max_ms must be >= reconnect_ivl_ms");
-
-        ZmqTransportConfig::new("tcp://127.0.0.1:9")
-            .check()
-            .unwrap();
-    }
-
-    #[test]
-    fn send_and_transport_errors_map_without_a_socket() {
-        assert!(map_send(Ok(())).is_ok());
-        assert!(matches!(
-            map_send(Err(zmq::Error::EAGAIN)),
-            Err(ZmqMessageError::HighWaterMark)
-        ));
-        assert!(matches!(
-            map_send(Err(zmq::Error::EINVAL)),
-            Err(ZmqMessageError::Transport(_))
-        ));
-
-        let validation = ValidationError::non_finite("strength", f32::NAN);
-        assert!(matches!(
-            map_transport_error(ZmqMessageError::Validation(validation.clone())),
-            crate::BackendError::InvalidInput(_)
-        ));
-        assert!(matches!(
-            map_transport_error(ZmqMessageError::Encode(CanonicalEncodeError::Validation(
-                validation
-            ))),
-            crate::BackendError::InvalidInput(_)
-        ));
-        assert!(matches!(
-            map_transport_error(ZmqMessageError::WouldBlock),
-            crate::BackendError::CommunicationError(_)
-        ));
-    }
-
-    #[test]
-    fn publisher_and_subscriber_debug_and_closed_options() {
-        assert_socket_send_sync();
-        let endpoint = endpoint();
-        let publisher = ZmqMessagePublisher::bind(ZmqTransportConfig::new(&endpoint)).unwrap();
-        let subscriber = ZmqMessageSubscriber::connect(ZmqTransportConfig::new(&endpoint)).unwrap();
-        assert_eq!(format!("{publisher:?}"), "ZmqMessagePublisher");
-        assert_eq!(format!("{subscriber:?}"), "ZmqMessageSubscriber");
-        publisher.close();
-        subscriber.close();
-        assert!(matches!(
-            publisher.socket_options_for_tests(),
-            Err(ZmqMessageError::Closed)
-        ));
-        assert!(matches!(
-            subscriber.socket_options_for_tests(),
-            Err(ZmqMessageError::Closed)
-        ));
-
-        poison_publisher_lock(&publisher);
-        assert!(matches!(
-            publisher.send(&crate::IpcMessage::Ping),
-            Err(ZmqMessageError::Closed)
-        ));
-    }
-
-    fn poison_publisher_lock(publisher: &ZmqMessagePublisher) {
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _guard = publisher.socket.lock().expect("lock");
-            panic!("poison the publisher mutex");
-        }));
-    }
-
-    #[test]
-    fn bind_and_connect_report_setup_failures() {
-        let bind_err =
-            ZmqMessagePublisher::bind(ZmqTransportConfig::new("not-an-endpoint")).unwrap_err();
-        assert!(bind_err.to_string().contains("bind"), "{bind_err}");
-
-        let connect_err =
-            ZmqMessageSubscriber::connect(ZmqTransportConfig::new("not-an-endpoint")).unwrap_err();
-        assert!(connect_err.to_string().contains("connect"), "{connect_err}");
-    }
-}
+#[path = "transport_tests.rs"]
+mod coverage;

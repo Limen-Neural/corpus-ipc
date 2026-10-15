@@ -220,12 +220,26 @@ fn socket_options_are_visible_after_bind_and_connect() {
     let publisher = ZmqMessagePublisher::bind(config.clone()).unwrap();
     assert_eq!(
         publisher.socket_options_for_tests().unwrap(),
-        (7, 9, 25, 40, 80)
+        (
+            7,
+            9,
+            25,
+            40,
+            80,
+            super::transport::STRUCTURED_MAX_FRAME_BYTES
+        )
     );
     let subscriber = ZmqMessageSubscriber::connect(config).unwrap();
     assert_eq!(
         subscriber.socket_options_for_tests().unwrap(),
-        (7, 9, 25, 40, 80)
+        (
+            7,
+            9,
+            25,
+            40,
+            80,
+            super::transport::STRUCTURED_MAX_FRAME_BYTES
+        )
     );
 }
 

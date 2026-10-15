@@ -19,10 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ZmqTransportConfig` sets endpoint, send/receive high-water marks, linger, and
   reconnect limits before bind/connect. The reconnect cap must be at least the
   reconnect interval; libzmq ignores a smaller cap. The publisher and subscriber
-  retain the ZeroMQ context until the socket is closed. `ZmqHybridFlowBackend` implements
+  retain the ZeroMQ context until the socket is closed.   `ZmqHybridFlowBackend` implements
   `HybridFlowBackend` on that pair: spikes and embeddings go out, gradients and
-  eligibility traces come in, and any other inbound variant is
-  `BackendError::Protocol` rather than a silent drop. PUB/SUB stays
+  eligibility traces come in. The other of those two inbound variants is held
+  for its receiver; a second held sibling returns `CommunicationError` instead
+  of being dropped. Any unrelated inbound variant is
+  `BackendError::Protocol`. Identical outbound and inbound endpoints are
+  rejected before either socket opens. A high-water mark of `0` is unlimited.
+  Inbound frames are capped (`ZMQ_MAXMSGSIZE`, 96 MiB). Multipart input is
+  drained up to eight extra frames and then the subscriber is closed.
+  Validation failures inside an envelope payload surface as `InvalidInput` on
+  the hybrid adapter. A closed publisher reports `Closed` before payload
+  validation. PUB/SUB stays
   best-effort and at-most-once (slow-joiner loss, high-water-mark loss, no
   acknowledgements), including for control and config messages. `ZmqIpcBackend`
   remains the separate binary `[i64 tick][N × f32 LE]` readout subscriber and

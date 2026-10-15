@@ -99,6 +99,6 @@ pub use zmq_backend::ZmqIpcBackend;
 pub use zmq_backend::ZmqRuntimeBackend;
 #[cfg(feature = "zmq")]
 pub use zmq_message::{
-    FramingFault, ZmqHybridFlowBackend, ZmqMessageError, ZmqMessagePublisher, ZmqMessageSubscriber,
-    ZmqTransportConfig,
+    FramingFault, STRUCTURED_MAX_FRAME_BYTES, ZmqHybridFlowBackend, ZmqMessageError,
+    ZmqMessagePublisher, ZmqMessageSubscriber, ZmqTransportConfig,
 };

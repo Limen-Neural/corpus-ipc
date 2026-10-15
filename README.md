@@ -71,13 +71,18 @@ A non-blocking receive with nothing queued returns a typed would-block error
 (`Ok(None)` on the hybrid-flow receive methods). Malformed JSON, an
 incompatible `wire_version`, an invalid payload, multipart or empty framing,
 and an unexpected inbound variant return typed errors; unexpected variants are
-not discarded quietly.
+not discarded quietly. The other supported inbound variant (a gradient while
+the caller is receiving traces, or a trace while receiving gradients) is held
+for its own method. A high-water mark of `0` is unlimited, matching libzmq.
+Structured sockets also set `ZMQ_MAXMSGSIZE` so one peer frame cannot allocate
+without a bound.
 
 `ZmqTransportConfig` carries the endpoint, send and receive high-water marks,
 linger, and reconnect interval / maximum. Those socket options are applied
 before bind or connect.
 
-The sections below describe the **binary readout** backend only.
+The following ZMQ subsections describe the **binary readout** backend.
+Installation, the quick start, and protocol ownership come after them.
 
 ### ZMQ backend concurrency
 

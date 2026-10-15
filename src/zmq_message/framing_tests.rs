@@ -163,6 +163,10 @@ fn multipart_and_empty_frames_are_framing_errors() {
         err,
         ZmqMessageError::UnexpectedFraming(FramingFault::Multipart)
     ));
+    assert!(matches!(
+        subscriber.try_recv(),
+        Err(ZmqMessageError::WouldBlock)
+    ));
 
     let endpoint = unique_endpoint();
     let publisher = raw_publisher(&endpoint);
@@ -278,4 +282,28 @@ fn close_and_drop_do_not_panic() {
     })
     .join()
     .expect("shared publisher panicked");
+}
+
+#[test]
+fn oversized_multipart_closes_the_subscriber() {
+    let endpoint = unique_endpoint();
+    let publisher = raw_publisher(&endpoint);
+    let subscriber = ZmqMessageSubscriber::connect(ZmqTransportConfig::new(&endpoint)).unwrap();
+    let err = recv_until_error(&publisher, &subscriber, |socket| {
+        let parts = super::transport::MULTIPART_DRAIN_LIMIT + 1;
+        for _ in 0..parts {
+            socket
+                .send(&b"part"[..], zmq::SNDMORE | zmq::DONTWAIT)
+                .unwrap();
+        }
+        socket.send(&b"tail"[..], zmq::DONTWAIT).unwrap();
+    });
+    assert!(matches!(
+        err,
+        ZmqMessageError::UnexpectedFraming(FramingFault::Multipart)
+    ));
+    assert!(matches!(
+        subscriber.try_recv(),
+        Err(ZmqMessageError::Closed)
+    ));
 }
