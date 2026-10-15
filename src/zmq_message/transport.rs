@@ -4,7 +4,8 @@ use std::sync::{Mutex, MutexGuard};
 
 use crate::validation::Validate;
 use crate::{
-    CanonicalEncodeError, IpcMessage, decode_ipc_message_json, encode_canonical_ipc_message,
+    CanonicalEncodeError, IpcMessage, ValidationKind, decode_ipc_message_json,
+    encode_canonical_ipc_message,
 };
 
 /// Why a ZeroMQ message was not a single structured frame.
@@ -590,20 +591,37 @@ fn next_part(socket: &mut ExclusiveSocket) -> Result<bool, ZmqMessageError> {
     }
 }
 
-const VALIDATION_MARKERS: [&str; 6] = [
-    "non_finite at `",
-    "out_of_range at `",
-    "length_mismatch at `",
-    "limit_exceeded at `",
-    "nested_metadata at `",
-    "duplicate_identifier at `",
-];
-
+/// `EnvelopeError::Payload` is every serde payload failure. Structural JSON
+/// (missing fields, wrong types) stays a communication error. A failure is a
+/// validation error only when its text contains a [`ValidationKind`] display
+/// prefix, which is the stable `"{kind} at `" form from [`crate::ValidationError`].
 fn is_validation_payload(err: &serde_json::Error) -> bool {
     let text = err.to_string();
-    VALIDATION_MARKERS
+    validation_kinds()
         .iter()
-        .any(|marker| text.contains(marker))
+        .any(|kind| text.contains(marker_prefix(*kind)))
+}
+
+fn validation_kinds() -> [ValidationKind; 6] {
+    [
+        ValidationKind::NonFinite,
+        ValidationKind::OutOfRange,
+        ValidationKind::LengthMismatch,
+        ValidationKind::LimitExceeded,
+        ValidationKind::NestedMetadata,
+        ValidationKind::DuplicateIdentifier,
+    ]
+}
+
+fn marker_prefix(kind: ValidationKind) -> &'static str {
+    match kind {
+        ValidationKind::NonFinite => "non_finite at `",
+        ValidationKind::OutOfRange => "out_of_range at `",
+        ValidationKind::LengthMismatch => "length_mismatch at `",
+        ValidationKind::LimitExceeded => "limit_exceeded at `",
+        ValidationKind::NestedMetadata => "nested_metadata at `",
+        ValidationKind::DuplicateIdentifier => "duplicate_identifier at `",
+    }
 }
 
 pub(super) fn map_transport_error(err: ZmqMessageError) -> crate::BackendError {

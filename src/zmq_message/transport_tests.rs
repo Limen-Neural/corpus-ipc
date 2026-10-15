@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::*;
-use crate::ValidationError;
+use crate::{ValidationError, ValidationKind};
 
 fn endpoint() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -98,17 +98,70 @@ fn send_and_transport_errors_map_without_a_socket() {
         map_transport_error(ZmqMessageError::WouldBlock),
         crate::BackendError::CommunicationError(_)
     ));
+    let dopamine = decode_frame(
+        br#"{"payload":{"Neuromodulators":{"acetylcholine":0.0,"cortisol":0.0,"dopamine":5.0,"tempo":1.0,"tick":1}},"wire_version":1}"#,
+    )
+    .unwrap_err();
     assert!(matches!(
-            map_transport_error(decode_frame(br#"{"payload":{"Neuromodulators":{"acetylcholine":0.0,"cortisol":0.0,"dopamine":5.0,"tempo":1.0,"tick":1}},"wire_version":1}"#).unwrap_err()),
-            crate::BackendError::InvalidInput(_)
-        ));
+        map_transport_error(dopamine),
+        crate::BackendError::InvalidInput(_)
+    ));
+    let missing_field =
+        decode_frame(br#"{"payload":{"Neuromodulators":{"tick":1}},"wire_version":1}"#)
+            .unwrap_err();
     assert!(matches!(
-        map_transport_error(
-            decode_frame(br#"{"payload":{"Neuromodulators":{"tick":1}},"wire_version":1}"#)
-                .unwrap_err()
-        ),
+        map_transport_error(missing_field),
         crate::BackendError::CommunicationError(_)
     ));
+}
+
+#[test]
+fn every_validation_kind_in_a_payload_maps_to_invalid_input() {
+    for kind in validation_kinds() {
+        let sample = sample_validation(kind);
+        assert_eq!(sample.kind, kind);
+        let json_err: serde_json::Error = serde::de::Error::custom(sample);
+        let mapped = map_transport_error(ZmqMessageError::Envelope(crate::EnvelopeError::Payload(
+            json_err,
+        )));
+        assert!(
+            matches!(mapped, crate::BackendError::InvalidInput(_)),
+            "{kind} mapped to {mapped:?}"
+        );
+    }
+    assert_eq!(validation_kind_mask(), ALL_VALIDATION_KIND_BITS);
+}
+
+fn sample_validation(kind: ValidationKind) -> ValidationError {
+    match kind {
+        ValidationKind::NonFinite => ValidationError::non_finite("strength", f32::NAN),
+        ValidationKind::OutOfRange => ValidationError::out_of_range("dopamine", 5.0, 0.0, 1.0),
+        ValidationKind::LengthMismatch => ValidationError::length_mismatch("values", 2, 1),
+        ValidationKind::LimitExceeded => ValidationError::limit_exceeded("gradients", 3, 1),
+        ValidationKind::NestedMetadata => ValidationError::nested_metadata("config"),
+        ValidationKind::DuplicateIdentifier => {
+            ValidationError::duplicate_identifier("layer_id", "layer")
+        }
+    }
+}
+
+const ALL_VALIDATION_KIND_BITS: u8 = (1 << 6) - 1;
+
+fn validation_kind_mask() -> u8 {
+    validation_kinds()
+        .iter()
+        .fold(0, |bits, kind| bits | kind_bit(*kind))
+}
+
+fn kind_bit(kind: ValidationKind) -> u8 {
+    match kind {
+        ValidationKind::NonFinite => 1 << 0,
+        ValidationKind::OutOfRange => 1 << 1,
+        ValidationKind::LengthMismatch => 1 << 2,
+        ValidationKind::LimitExceeded => 1 << 3,
+        ValidationKind::NestedMetadata => 1 << 4,
+        ValidationKind::DuplicateIdentifier => 1 << 5,
+    }
 }
 
 #[test]

@@ -23,8 +23,9 @@ use super::transport::{
 /// and the held frame stays. Any unrelated inbound variant returns
 /// [`BackendError::Protocol`] ([`ProtocolError::UnexpectedVariant`]). That
 /// frame is consumed; it is not discarded quietly and it is not pushed back
-/// onto the socket. Inbound validation failures surface as
-/// [`BackendError::InvalidInput`].
+/// onto the socket. Inbound [`crate::ValidationError`] failures surface as
+/// [`BackendError::InvalidInput`]. A payload that fails structurally (missing
+/// fields, wrong JSON types) stays [`BackendError::CommunicationError`].
 ///
 /// This type does not implement [`crate::IpcBackend`]. Binary readouts stay on
 /// [`crate::ZmqIpcBackend`].

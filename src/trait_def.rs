@@ -100,7 +100,7 @@ pub use IpcBackend as RuntimeBackend;
 /// right now. [`BackendError::Protocol`] means a different variant arrived and
 /// was consumed. [`BackendError::InvalidInput`] means the payload failed
 /// validation. [`BackendError::CommunicationError`] covers framing, version,
-/// and transport failures.
+/// transport failures, and structural payload decode failures.
 pub trait HybridFlowBackend: Send + Sync {
     /// Send a spike batch over the transport.
     fn send_spikes(&mut self, spikes: SpikeBatch) -> Result<(), BackendError>;
