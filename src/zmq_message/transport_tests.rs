@@ -117,7 +117,7 @@ fn send_and_transport_errors_map_without_a_socket() {
 
 #[test]
 fn every_validation_kind_in_a_payload_maps_to_invalid_input() {
-    for kind in validation_kinds() {
+    for kind in ValidationKind::ALL {
         let sample = sample_validation(kind);
         assert_eq!(sample.kind, kind);
         let json_err: serde_json::Error = serde::de::Error::custom(sample);
@@ -129,7 +129,6 @@ fn every_validation_kind_in_a_payload_maps_to_invalid_input() {
             "{kind} mapped to {mapped:?}"
         );
     }
-    assert_eq!(validation_kind_mask(), ALL_VALIDATION_KIND_BITS);
 }
 
 fn sample_validation(kind: ValidationKind) -> ValidationError {
@@ -142,25 +141,6 @@ fn sample_validation(kind: ValidationKind) -> ValidationError {
         ValidationKind::DuplicateIdentifier => {
             ValidationError::duplicate_identifier("layer_id", "layer")
         }
-    }
-}
-
-const ALL_VALIDATION_KIND_BITS: u8 = (1 << 6) - 1;
-
-fn validation_kind_mask() -> u8 {
-    validation_kinds()
-        .iter()
-        .fold(0, |bits, kind| bits | kind_bit(*kind))
-}
-
-fn kind_bit(kind: ValidationKind) -> u8 {
-    match kind {
-        ValidationKind::NonFinite => 1 << 0,
-        ValidationKind::OutOfRange => 1 << 1,
-        ValidationKind::LengthMismatch => 1 << 2,
-        ValidationKind::LimitExceeded => 1 << 3,
-        ValidationKind::NestedMetadata => 1 << 4,
-        ValidationKind::DuplicateIdentifier => 1 << 5,
     }
 }
 

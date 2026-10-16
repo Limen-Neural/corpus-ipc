@@ -597,31 +597,9 @@ fn next_part(socket: &mut ExclusiveSocket) -> Result<bool, ZmqMessageError> {
 /// prefix, which is the stable `"{kind} at `" form from [`crate::ValidationError`].
 fn is_validation_payload(err: &serde_json::Error) -> bool {
     let text = err.to_string();
-    validation_kinds()
+    ValidationKind::ALL
         .iter()
-        .any(|kind| text.contains(marker_prefix(*kind)))
-}
-
-fn validation_kinds() -> [ValidationKind; 6] {
-    [
-        ValidationKind::NonFinite,
-        ValidationKind::OutOfRange,
-        ValidationKind::LengthMismatch,
-        ValidationKind::LimitExceeded,
-        ValidationKind::NestedMetadata,
-        ValidationKind::DuplicateIdentifier,
-    ]
-}
-
-fn marker_prefix(kind: ValidationKind) -> &'static str {
-    match kind {
-        ValidationKind::NonFinite => "non_finite at `",
-        ValidationKind::OutOfRange => "out_of_range at `",
-        ValidationKind::LengthMismatch => "length_mismatch at `",
-        ValidationKind::LimitExceeded => "limit_exceeded at `",
-        ValidationKind::NestedMetadata => "nested_metadata at `",
-        ValidationKind::DuplicateIdentifier => "duplicate_identifier at `",
-    }
+        .any(|kind| text.contains(&format!("{} at `", kind.as_str())))
 }
 
 pub(super) fn map_transport_error(err: ZmqMessageError) -> crate::BackendError {

@@ -7,36 +7,50 @@ use std::fmt;
 /// These identifiers are part of the crate's error contract: serde wrappers
 /// and [`fmt::Display`] use [`ValidationKind::as_str`], so assertions should
 /// match the kind rather than a full prose sentence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ValidationKind {
-    /// An `f32` was NaN or ±infinity.
-    NonFinite,
-    /// A numeric value was outside its documented inclusive range.
-    OutOfRange,
-    /// Two related sequences (for example `values` and `valid_mask`) differed in length.
-    LengthMismatch,
-    /// A collection length or string byte length exceeded [`ProtocolLimits`](crate::ProtocolLimits).
-    LimitExceeded,
-    /// Nested metadata violated policy (empty key, or a nested object rejected
-    /// by the typed map).
-    NestedMetadata,
-    /// A repeated identifier in a list that must be unique (`channel_id`, `layer_id`).
-    DuplicateIdentifier,
+macro_rules! validation_kinds {
+    ($( $(#[$meta:meta])* $name:ident => $label:literal ),+ $(,)?) => {
+        /// Stable classification of a protocol validation failure.
+        ///
+        /// These identifiers are part of the crate's error contract: serde wrappers
+        /// and [`fmt::Display`] use [`ValidationKind::as_str`], so assertions should
+        /// match the kind rather than a full prose sentence.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum ValidationKind {
+            $( $(#[$meta])* $name, )+
+        }
+
+        impl ValidationKind {
+            /// Every variant, in declaration order.
+            ///
+            /// The enum, this array, and [`Self::as_str`] come from one list, so a
+            /// new variant cannot compile until it is added there.
+            pub const ALL: [Self; 6] = [$(Self::$name,)+];
+
+            /// Stable machine-readable kind name.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$name => $label,)+
+                }
+            }
+        }
+    };
 }
 
-impl ValidationKind {
-    /// Stable machine-readable kind name.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::NonFinite => "non_finite",
-            Self::OutOfRange => "out_of_range",
-            Self::LengthMismatch => "length_mismatch",
-            Self::LimitExceeded => "limit_exceeded",
-            Self::NestedMetadata => "nested_metadata",
-            Self::DuplicateIdentifier => "duplicate_identifier",
-        }
-    }
+validation_kinds! {
+    /// An `f32` was NaN or ±infinity.
+    NonFinite => "non_finite",
+    /// A numeric value was outside its documented inclusive range.
+    OutOfRange => "out_of_range",
+    /// Two related sequences (for example `values` and `valid_mask`) differed in length.
+    LengthMismatch => "length_mismatch",
+    /// A collection length or string byte length exceeded [`ProtocolLimits`](crate::ProtocolLimits).
+    LimitExceeded => "limit_exceeded",
+    /// Nested metadata violated policy (empty key, or a nested object rejected
+    /// by the typed map).
+    NestedMetadata => "nested_metadata",
+    /// A repeated identifier in a list that must be unique (`channel_id`, `layer_id`).
+    DuplicateIdentifier => "duplicate_identifier",
 }
 
 impl fmt::Display for ValidationKind {
