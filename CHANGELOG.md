@@ -11,6 +11,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Structured ZeroMQ `IpcMessage` transport behind the `zmq` feature (LIM-1278,
+  consolidating LIM-1330). `ZmqMessagePublisher` binds and `ZmqMessageSubscriber`
+  connects; each message is one compact canonical JSON `WireEnvelope` of
+  `IpcMessage`. The publisher validates before `encode_canonical_ipc_message`.
+  The subscriber decodes with `decode_ipc_message_json` and `Validate`.
+  `ZmqTransportConfig` sets endpoint, send/receive high-water marks, linger, and
+  reconnect limits before bind/connect. The reconnect cap must be at least the
+  reconnect interval; libzmq ignores a smaller cap. The publisher and subscriber
+  retain the ZeroMQ context until the socket is closed. `ZmqHybridFlowBackend` implements
+  `HybridFlowBackend` on that pair: spikes and embeddings go out, gradients and
+  eligibility traces come in. The other of those two inbound variants is held
+  for its receiver; a second held sibling returns `CommunicationError` instead
+  of being dropped. Any unrelated inbound variant is
+  `BackendError::Protocol`. Identical outbound and inbound endpoints are
+  rejected before either socket opens. A high-water mark of `0` is unlimited.
+  Inbound frames are capped (`ZMQ_MAXMSGSIZE`, 512 MiB). A publisher rejects
+  an encoded frame above that cap before send. Multipart input is drained up
+  to eight extra frames. A message that fits in that drain returns a framing
+  error and leaves the subscriber open; frames still remaining after the drain
+  close the subscriber.
+  Validation failures inside an envelope payload surface as `InvalidInput` on
+  the hybrid adapter. A closed publisher reports `Closed` before payload
+  validation. PUB/SUB stays
+  best-effort and at-most-once (slow-joiner loss, high-water-mark loss, no
+  acknowledgements), including for control and config messages. `ZmqIpcBackend`
+  remains the separate binary `[i64 tick][N × f32 LE]` readout subscriber and
+  does not implement `HybridFlowBackend`. Socket ownership stays
+  mutex-serialized `Send` + `Sync` with no `unsafe impl Sync`.
+
 - **v0.2 REST contract** for `corpus_ipc_server` (feature `server`), now on
   Axum 0.8 (LIM-1329). The router lives in `corpus_ipc::server::router` so it
   can be exercised in-process without binding a socket; the binary is a thin
@@ -25,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   floats (`CORPUS_IPC_ZMQ_MAX_READOUT_FLOATS` override).
 
 ### Changed
+
+- `BackendError` gains `Protocol(ProtocolError)` so a hybrid-flow receiver can
+  report an unexpected `IpcMessage` variant without overloading transport or
+  validation errors. Exhaustive matches on `BackendError` need a new arm. Wire
+  version stays 1. The REST mapper still treats this arm as a backend failure
+  (HTTP 502); the router does not expose hybrid-flow sockets.
 
 - crates.io metadata now describes the spike and neuromodulator wire protocol
   (description, keywords `snn` / `neuromorphic` / `spiking` / `ipc` / `zmq`,
