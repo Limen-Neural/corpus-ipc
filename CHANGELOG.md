@@ -55,6 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pinned Rust toolchain bumped from 1.98.1 to 1.99.0 in lockstep: `rust-version`
+  (root and `ci/ap-check`), `rust-toolchain.toml`, `ci.yml`, and `coverage.yml`
+  (RM-2063).
 - `BackendError` gains `Protocol(ProtocolError)` so a hybrid-flow receiver can
   report an unexpected `IpcMessage` variant without overloading transport or
   validation errors. Exhaustive matches on `BackendError` need a new arm. Wire

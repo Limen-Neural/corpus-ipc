@@ -28,13 +28,13 @@ This document is repository-owned and intentionally stays **out of** the
 
 ### Toolchain caveat (read this before using any number)
 
-- The crate pins `rust-version = "1.98.1"` (MSRV) in `Cargo.toml`. This sandbox
+- The crate pins `rust-version = "1.99.0"` (MSRV) in `Cargo.toml`. This sandbox
   ships **cargo/rustc 1.92.0**, which is numerically **older** than that MSRV.
   Cargo therefore **refuses** a plain build:
 
   ```text
   error: rustc 1.92.0 is not supported by the following package:
-    corpus-ipc@0.1.0 requires rustc 1.98.1
+    corpus-ipc@0.1.0 requires rustc 1.99.0
   ```
 
 - To obtain build/check timing evidence at all, the measurements below were run
@@ -42,7 +42,7 @@ This document is repository-owned and intentionally stays **out of** the
   commands. That flag **only bypasses the manifest gate for the current
   invocation**; it does **not** modify the crate's MSRV and nothing in the repo
   was changed. The source compiles cleanly on 1.92.0 once the gate is bypassed.
-- CI pins the toolchain to **1.98.1** via `dtolnay/rust-toolchain`. Compile
+- CI pins the toolchain to **1.99.0** via `dtolnay/rust-toolchain`. Compile
   numbers here are from a **different, older** toolchain and will differ from the
   pinned-CI runner. Treat every timing below as "observed on this sandbox with
   1.92.0", not as the CI budget.
@@ -214,7 +214,7 @@ effectively free warm, so a fast/dev mode can run it on every change. The
 all-features/zmq path costs the most (native C++), so a script should avoid
 recompiling it or re-running `cargo package` / `cargo publish --dry-run`
 redundantly, and reserve those for an explicit full/release mode. Numbers are
-**observed on cargo/rustc 1.92.0 on this sandbox**; the pinned-CI 1.98.1 runner
+**observed on cargo/rustc 1.92.0 on this sandbox**; the pinned-CI 1.99.0 runner
 will differ and must be measured separately.
 
 ## Reproduce
@@ -225,6 +225,6 @@ cargo fetch --locked                       # prime registry cache once
 for f in "--no-default-features" "--features server" "--features zmq" "--all-features"; do
   cargo tree $f --edges normal --locked --prefix none | sed 's/ v.*//' | sort -u | grep -v '^$' | wc -l
 done
-# timing (append --ignore-rust-version only if the runner's rustc < MSRV 1.98.1)
+# timing (append --ignore-rust-version only if the runner's rustc < MSRV 1.99.0)
 cargo clean && cargo build --all-features --locked --timings   # HTML under target/cargo-timings (gitignored)
 ```
