@@ -64,7 +64,7 @@
 #   real cargo/cc-rs error and points at this workaround; it is never auto-skipped.
 #
 # MSRV note:
-#   The crate pins rust-version = 1.98.1 and CI installs exactly that toolchain.
+#   The crate pins rust-version = 1.99.0 and CI installs exactly that toolchain.
 #   This script targets a correct (>= MSRV) toolchain and never bakes in
 #   `--ignore-rust-version`. On a runner whose rustc is older than the MSRV,
 #   cargo will refuse the build/check/clippy/test phases by design.
