@@ -81,7 +81,7 @@ Backend selection and endpoints are via env vars: `CORPUS_IPC_BACKEND_TYPE` (`zm
 
 cargo-fuzz targets `fuzz_ipc_message_json`, `fuzz_zmq_readout_frame`, and
 `fuzz_zmq_message_frame` live in `fuzz/`, a standalone workspace outside the
-package `include` list. They need nightly + `cargo install cargo-fuzz` + C++.
+package `include` list. They need nightly + `cargo install cargo-fuzz` + Python 3 + C++.
 Invariants are in `fuzz/src/lib.rs`, which `tests/fuzz_regressions.rs` also
 compiles, so regression seeds replay on stable (`cargo test --all-features`).
 

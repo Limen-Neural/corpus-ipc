@@ -56,8 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository-only cargo-fuzz targets in `fuzz/` (LIM-1277):
   `fuzz_ipc_message_json` (compatibility decoder), `fuzz_zmq_readout_frame`
   (`parse_readout_packet` and `ZmqIpcBackend` ingest), and
-  `fuzz_zmq_message_frame` (the structured subscriber's frame decoder). Each
-  checks no-panic, `ProtocolLimits` enforcement, and canonical round trips.
+  `fuzz_zmq_message_frame` (the structured subscriber's frame decoder). All
+  three check no-panic. The two JSON targets also check `ProtocolLimits`
+  enforcement and canonical round trips; the readout target checks frame
+  bounds, bit-exact decoding, and that the backend cache changes only on
+  accept.
   `scripts/fuzz-smoke.sh` runs a bounded campaign seeded in place from
   `test-vectors/`; the Linux-only `Fuzz smoke` workflow runs it for 60 s per
   target. `tests/fuzz_regressions.rs` replays the same invariants and any

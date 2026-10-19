@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       seconds:
-        description: Wall-clock budget per target
+        description: Wall-clock budget per target in seconds (1-480; three targets share a 30-minute job)
         default: "60"
 
 permissions:
@@ -52,7 +52,13 @@ jobs:
       - name: Run bounded fuzz smoke
         env:
           SECONDS_PER_TARGET: ${{ inputs.seconds || '60' }}
-        run: scripts/fuzz-smoke.sh --toolchain "$FUZZ_TOOLCHAIN" --seconds "$SECONDS_PER_TARGET"
+        run: |
+          # Three sequential targets plus the build must fit timeout-minutes: 30.
+          if ! [[ "$SECONDS_PER_TARGET" =~ ^[1-9][0-9]*$ ]] || (( SECONDS_PER_TARGET > 480 )); then
+            echo "seconds must be an integer in 1..480, got: $SECONDS_PER_TARGET" >&2
+            exit 1
+          fi
+          scripts/fuzz-smoke.sh --toolchain "$FUZZ_TOOLCHAIN" --seconds "$SECONDS_PER_TARGET"
 
       - name: Upload crash artifacts
         if: failure()

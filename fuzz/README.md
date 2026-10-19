@@ -26,8 +26,9 @@ libFuzzer.
 
 ## Running
 
-Needs nightly Rust, `cargo install cargo-fuzz --locked`, and a C++ compiler
-(the targets enable feature `zmq`, which builds vendored libzmq).
+Needs nightly Rust, `cargo install cargo-fuzz --locked`, a C++ compiler (the
+targets enable feature `zmq`, which builds vendored libzmq), and Python 3 for
+the readout target (it decodes the hex golden frames into seeds).
 
 ```bash
 scripts/fuzz-smoke.sh                       # all targets, 30 s each
