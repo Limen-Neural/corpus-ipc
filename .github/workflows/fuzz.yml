@@ -54,7 +54,8 @@ jobs:
           SECONDS_PER_TARGET: ${{ inputs.seconds || '60' }}
         run: |
           # Three sequential targets plus the build must fit timeout-minutes: 30.
-          if ! [[ "$SECONDS_PER_TARGET" =~ ^[1-9][0-9]*$ ]] || (( SECONDS_PER_TARGET > 480 )); then
+          # At most three digits, so the arithmetic below cannot overflow.
+          if ! [[ "$SECONDS_PER_TARGET" =~ ^[1-9][0-9]{0,2}$ ]] || (( SECONDS_PER_TARGET > 480 )); then
             echo "seconds must be an integer in 1..480, got: $SECONDS_PER_TARGET" >&2
             exit 1
           fi

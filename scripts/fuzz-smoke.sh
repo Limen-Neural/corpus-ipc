@@ -24,8 +24,10 @@ toolchain=nightly
 targets=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --seconds) seconds="$2"; shift 2 ;;
-    --toolchain) toolchain="$2"; shift 2 ;;
+    --seconds|--toolchain)
+      [[ $# -ge 2 ]] || { echo "$1 needs a value" >&2; exit 2; }
+      if [[ "$1" == --seconds ]]; then seconds="$2"; else toolchain="$2"; fi
+      shift 2 ;;
     -h|--help) sed -n '3,/^set -euo/{/^#/p}' "$0"; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) targets+=("$1"); shift ;;
