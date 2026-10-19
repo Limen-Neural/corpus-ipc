@@ -25,7 +25,7 @@ targets=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --seconds|--toolchain)
-      [[ $# -ge 2 ]] || { echo "$1 needs a value" >&2; exit 2; }
+      [[ $# -ge 2 && "$2" != -* ]] || { echo "$1 needs a value" >&2; exit 2; }
       if [[ "$1" == --seconds ]]; then seconds="$2"; else toolchain="$2"; fi
       shift 2 ;;
     -h|--help) sed -n '3,/^set -euo/{/^#/p}' "$0"; exit 0 ;;
