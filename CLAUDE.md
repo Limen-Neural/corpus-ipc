@@ -77,6 +77,24 @@ CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server,zmq --bin c
 
 Backend selection and endpoints are via env vars: `CORPUS_IPC_BACKEND_TYPE` (`zmq` or default `Rust`), `CORPUS_IPC_BIND` (listen address, default `127.0.0.1:8080`), `CORPUS_IPC_ZMQ_READOUT_IPC` (ZeroMQ subscriber (SUB) endpoint, default `ipc:///tmp/corpus_ipc_readout.ipc`). Exercise the service with `POST /initialize`, `POST /process {"inputs":[...]}`, `POST /save_state {"model_path":"..."}`, `POST /reset`.
 
+### Fuzzing (`fuzz/`, repo-only)
+
+cargo-fuzz targets `fuzz_ipc_message_json`, `fuzz_zmq_readout_frame`, and
+`fuzz_zmq_message_frame` live in `fuzz/`, a standalone workspace outside the
+package `include` list. They need nightly + `cargo install cargo-fuzz` + C++.
+Invariants are in `fuzz/src/lib.rs`, which `tests/fuzz_regressions.rs` also
+compiles, so regression seeds replay on stable (`cargo test --all-features`).
+
+```bash
+scripts/fuzz-smoke.sh                 # bounded campaign, 30 s per target, seeded from test-vectors/ in place
+scripts/fuzz-smoke.sh --seconds 300 fuzz_zmq_message_frame
+cargo test --features zmq --test fuzz_regressions
+```
+
+Commit a minimized input to `fuzz/regressions/<target>/` for every fixed crash,
+and document its origin in `fuzz/README.md`. Never copy `test-vectors/` into
+the fuzz corpus.
+
 ## Architecture
 
 `corpus-ipc` is the schema/transport layer bridging Rust to an external compute engine (a Julia SNN runtime). It has two largely independent halves that are easy to conflate:

@@ -73,6 +73,11 @@ name = "zmq_golden_readout"
 path = "tests/zmq_golden_readout.rs"
 required-features = ["zmq"]
 
+[[test]]
+name = "fuzz_regressions"
+path = "tests/fuzz_regressions.rs"
+required-features = ["zmq"]
+
 [dev-dependencies]
 hex = "0.4"
 proptest = "1"

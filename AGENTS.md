@@ -90,3 +90,21 @@ Rust stable (edition-2024 capable) is preinstalled in the VM; the startup update
 - Run the REST service (binary `corpus_ipc_server`, requires feature `server`):
   `CORPUS_IPC_BIND=127.0.0.1:8080 cargo run --release --features server --bin corpus_ipc_server`
   Add `zmq` as well (`--features server,zmq`) when selecting `CORPUS_IPC_BACKEND_TYPE=zmq`; otherwise the backend defaults to `Rust`. The process listens on `127.0.0.1:8080` when `CORPUS_IPC_BIND` is unset. Use `CORPUS_IPC_BIND` for another address; a remote bind (for example `0.0.0.0:8080`) needs an external access-control boundary because the router has no authentication or TLS. Exercise the service with `POST /initialize`, `POST /process {"inputs":[...]}`, `POST /save_state {"model_path":"..."}`, and `POST /reset`.
+
+## Fuzzing (`fuzz/`, repo-only)
+
+cargo-fuzz targets `fuzz_ipc_message_json`, `fuzz_zmq_readout_frame`, and
+`fuzz_zmq_message_frame` live in `fuzz/`, a standalone workspace outside the
+package `include` list. They need nightly + `cargo install cargo-fuzz` + C++.
+Invariants are in `fuzz/src/lib.rs`, which `tests/fuzz_regressions.rs` also
+compiles, so regression seeds replay on stable (`cargo test --all-features`).
+
+```bash
+scripts/fuzz-smoke.sh                 # bounded campaign, 30 s per target, seeded from test-vectors/ in place
+scripts/fuzz-smoke.sh --seconds 300 fuzz_zmq_message_frame
+cargo test --features zmq --test fuzz_regressions
+```
+
+Commit a minimized input to `fuzz/regressions/<target>/` for every fixed crash,
+and document its origin in `fuzz/README.md`. Never copy `test-vectors/` into
+the fuzz corpus.

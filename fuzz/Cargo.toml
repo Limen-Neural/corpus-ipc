@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+
+# Repository-only cargo-fuzz harness (LIM-1277). Not a workspace member of the
+# root crate and outside the corpus-ipc `include` allow-list, so it adds no
+# dependency, binary, or file to the published package. Needs nightly Rust and
+# cargo-fuzz; see fuzz/README.md.
+[package]
+name = "corpus-ipc-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+corpus-ipc = { path = "..", features = ["zmq"] }
+
+# Standalone workspace so the root workspace does not adopt this package.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_ipc_message_json"
+path = "fuzz_targets/fuzz_ipc_message_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_zmq_readout_frame"
+path = "fuzz_targets/fuzz_zmq_readout_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_zmq_message_frame"
+path = "fuzz_targets/fuzz_zmq_message_frame.rs"
+test = false
+doc = false
+bench = false
