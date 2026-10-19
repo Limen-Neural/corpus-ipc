@@ -123,13 +123,23 @@ fn check_readout_against_layout(data: &[u8], limit: usize) {
     }
 }
 
+/// Tick-only packet the backend is reset to before every ingest check.
+const SENTINEL_PACKET: [u8; 8] = i64::MIN.to_le_bytes();
+
 /// The backend cache changes exactly when the parser accepts the packet.
+///
+/// The backend is reset to [`SENTINEL_PACKET`] first, so a rejected packet
+/// that wrongly wrote its own data cannot hide behind an earlier accept of
+/// the same bytes at a larger limit.
 fn check_backend_ingest(data: &[u8], limit: usize) {
     static BACKEND: OnceLock<Mutex<ZmqIpcBackend>> = OnceLock::new();
     let mut backend = BACKEND
         .get_or_init(|| Mutex::new(ZmqIpcBackend::new()))
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    backend
+        .apply_readout_packet_with_limit_for_tests(&SENTINEL_PACKET, 0)
+        .expect("sentinel packet must be accepted");
     let before = backend.readout_cache_snapshot_for_tests();
     let expected = parse_readout_packet(data, limit);
     let applied = backend.apply_readout_packet_with_limit_for_tests(data, limit);

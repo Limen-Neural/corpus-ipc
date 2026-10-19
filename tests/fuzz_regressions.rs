@@ -69,9 +69,9 @@ fn random_inputs(count: usize, max_len: usize) -> Vec<Vec<u8>> {
         .collect()
 }
 
-/// Every proper prefix of `bytes` (truncations), including empty.
+/// Every prefix of `bytes`: empty, each truncation, and the full input.
 fn prefixes(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
-    (0..bytes.len()).map(move |len| &bytes[..len])
+    (0..=bytes.len()).map(move |len| &bytes[..len])
 }
 
 fn spikes_envelope(spike_count: usize) -> Vec<u8> {
@@ -123,7 +123,7 @@ fn json_targets_hold_on_committed_vectors_and_truncations() {
     let vectors = wire_v1_vectors();
     assert!(!vectors.is_empty());
     for vector in &vectors {
-        for input in prefixes(vector).chain([vector.as_slice()]) {
+        for input in prefixes(vector) {
             checks::check_ipc_message_json(input);
             checks::check_zmq_message_frame(input);
         }
@@ -135,7 +135,7 @@ fn readout_target_holds_on_committed_frames_and_truncations() {
     let frames = zmq_readout_vectors();
     assert!(!frames.is_empty());
     for frame in &frames {
-        for input in prefixes(frame).chain([frame.as_slice()]) {
+        for input in prefixes(frame) {
             checks::check_zmq_readout_frame(input);
         }
     }
