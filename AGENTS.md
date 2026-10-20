@@ -56,7 +56,7 @@ path always runs at full `nproc` and is never capped. The script consumes
 opt-in cap and can never implicitly cap the C++-free fast path.
 
 Observed verification budget (environment-specific; measured on this sandbox's
-cargo/rustc 1.92.0, not the pinned-CI 1.98.1 toolchain — re-measure on the
+cargo/rustc 1.92.0, not the pinned-CI 1.99.0 toolchain — re-measure on the
 target runner): fast checks are single-digit seconds cold and effectively free
 warm; a cold `--all-features` build is ~16 s (up to ~37 s on the first-ever cold
 C++ file cache). Full numbers, method, and caveats are in
