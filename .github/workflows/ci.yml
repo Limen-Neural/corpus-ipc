@@ -152,10 +152,10 @@ jobs:
       - name: Python wire-v1 conformance
         run: python3 conformance/python/check_wire_v1.py
 
-      - name: Set up Julia 1.10
+      - name: Set up Julia 1.13
         uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9 # v2
         with:
-          version: "1.10"
+          version: "1.13"
 
       - name: Julia wire-v1 conformance
         run: |

@@ -37,7 +37,7 @@ python3 conformance/python/check_wire_v1.py
 
 ## Julia
 
-Julia 1.10. The only package is JSON.jl 0.21.4, pinned in
+Julia 1.13 (current stable; verified on 1.13.2). The only package is JSON.jl 0.21.4, pinned in
 `conformance/julia/Project.toml` and `conformance/julia/Manifest.toml`.
 
 ```bash
