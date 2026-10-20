@@ -1,6 +1,4 @@
-"""
-Batch metadata and the optional metadata field on spike and stimulus batches.
-"""
+"""Batch metadata and the optional metadata field on spike and stimulus batches."""
 
 from __future__ import annotations
 

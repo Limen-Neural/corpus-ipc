@@ -1,6 +1,4 @@
-"""
-Typed failures for the wire-v1 conformance harness.
-"""
+"""Typed failures for the wire-v1 conformance harness."""
 
 
 class WireError(Exception):

@@ -1,6 +1,4 @@
-"""
-Wire-v1 version window and default protocol limits.
-"""
+"""Wire-v1 version window and default protocol limits."""
 
 CURRENT = 1
 MIN_SUPPORTED = 1

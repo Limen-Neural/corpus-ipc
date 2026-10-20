@@ -1,6 +1,4 @@
-"""
-Decoded wire-v1 message shapes.
-"""
+"""Decoded wire-v1 message shapes."""
 
 from __future__ import annotations
 

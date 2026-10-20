@@ -1,6 +1,4 @@
-"""
-Manifest integrity and per-fixture expectations.
-"""
+"""Manifest integrity and per-fixture expectations."""
 
 from __future__ import annotations
 

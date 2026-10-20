@@ -1,6 +1,4 @@
-"""
-Named wire-v1 cases that the manifest kinds do not state by themselves.
-"""
+"""Named wire-v1 cases that the manifest kinds do not state by themselves."""
 
 from __future__ import annotations
 

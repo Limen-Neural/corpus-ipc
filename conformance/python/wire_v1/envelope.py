@@ -1,6 +1,4 @@
-"""
-Version classification and externally tagged IpcMessage decode.
-"""
+"""Version classification and externally tagged IpcMessage decode."""
 
 from __future__ import annotations
 

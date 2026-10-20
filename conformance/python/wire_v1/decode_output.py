@@ -1,6 +1,4 @@
-"""
-Decoders for config, gradient, trace, and loss payloads.
-"""
+"""Decoders for config, gradient, trace, and loss payloads."""
 
 from __future__ import annotations
 

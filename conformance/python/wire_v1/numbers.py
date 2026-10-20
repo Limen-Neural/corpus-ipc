@@ -1,6 +1,4 @@
-"""
-Finite f32 conversion and zmij float spelling.
-"""
+"""Finite f32 conversion and zmij float spelling."""
 
 from __future__ import annotations
 

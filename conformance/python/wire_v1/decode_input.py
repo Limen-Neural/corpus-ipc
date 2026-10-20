@@ -1,6 +1,4 @@
-"""
-Decoders for spike, embedding, stimulus, and neuromodulator payloads.
-"""
+"""Decoders for spike, embedding, stimulus, and neuromodulator payloads."""
 
 from __future__ import annotations
 

@@ -1,6 +1,4 @@
-"""
-Integer, string, and collection checks shared by the decoders.
-"""
+"""Integer, string, and collection checks shared by the decoders."""
 
 from __future__ import annotations
 

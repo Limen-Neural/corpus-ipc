@@ -1,5 +1,4 @@
-"""
-Offline wire-v1 conformance harness (LIM-1327).
+"""Offline wire-v1 conformance harness (LIM-1327).
 
 Reads test-vectors/wire-v1, checks each SHA-256, and applies the same
 decode and rejection rules as decode_ipc_message_json.
