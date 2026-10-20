@@ -57,3 +57,84 @@ pub enum ProtocolError {
         expected: &'static str,
     },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{BackendError, ProtocolError};
+    use std::error::Error;
+
+    fn protocol() -> ProtocolError {
+        ProtocolError::UnexpectedVariant {
+            found: "Ping",
+            expected: "Spikes",
+        }
+    }
+
+    fn variant_kind(err: &BackendError) -> &'static str {
+        match err {
+            BackendError::InitializationError(_) => "init",
+            BackendError::ProcessingError(_) => "process",
+            BackendError::ModelError(_) => "model",
+            BackendError::CommunicationError(_) => "comm",
+            BackendError::InvalidInput(_) => "input",
+            BackendError::Protocol(_) => "protocol",
+        }
+    }
+
+    #[test]
+    fn backend_error_string_variants_keep_display_source_and_match() {
+        let cases = [
+            (
+                BackendError::InitializationError("model missing".into()),
+                "Initialization failed: model missing",
+                "init",
+            ),
+            (
+                BackendError::ProcessingError("shape mismatch".into()),
+                "Processing failed: shape mismatch",
+                "process",
+            ),
+            (
+                BackendError::ModelError("disk full".into()),
+                "Model I/O error: disk full",
+                "model",
+            ),
+            (
+                BackendError::CommunicationError("timeout".into()),
+                "Communication error: timeout",
+                "comm",
+            ),
+            (
+                BackendError::InvalidInput("empty batch".into()),
+                "Invalid input: empty batch",
+                "input",
+            ),
+        ];
+        for (err, display, kind) in cases {
+            assert_eq!(err.to_string(), display);
+            assert!(err.source().is_none(), "{display}");
+            assert_eq!(variant_kind(&err), kind);
+        }
+    }
+
+    #[test]
+    fn backend_error_protocol_stays_transparent() {
+        let inner = protocol();
+        let err = BackendError::from(inner.clone());
+        assert_eq!(
+            inner.to_string(),
+            "unexpected IpcMessage variant `Ping`; expected Spikes"
+        );
+        assert_eq!(err.to_string(), inner.to_string());
+        assert!(inner.source().is_none());
+        assert!(err.source().is_none());
+        assert!(matches!(
+            err,
+            BackendError::Protocol(ProtocolError::UnexpectedVariant {
+                found: "Ping",
+                expected: "Spikes",
+            })
+        ));
+        assert_eq!(variant_kind(&err), "protocol");
+    }
+}

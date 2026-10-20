@@ -72,6 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Direct dependency `thiserror` is 2.x (LIM-1451). `BackendError`,
+  `ProtocolError`, `CompatibilityError`, `EnvelopeError`, and
+  `CanonicalEncodeError` keep the same Display text, `Error::source`
+  results, and variant matches. Compatible lockfile updates are included.
+  The Axum crate stays 0.8. The crate version stays 0.1.0.
+
 - `BackendError` gains `Protocol(ProtocolError)` so a hybrid-flow receiver can
   report an unexpected `IpcMessage` variant without overloading transport or
   validation errors. Exhaustive matches on `BackendError` need a new arm. Wire
