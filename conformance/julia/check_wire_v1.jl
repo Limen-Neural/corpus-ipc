@@ -166,9 +166,8 @@ function render_zmij(digits::AbstractString, dec_exp::Int)::String
     end
     mantissa = length_digits == 1 ? String(digits) : string(chars[1], ".", String(chars[2:end]))
     sign = dec_exp >= 0 ? "+" : "-"
-    exp = abs(dec_exp)
-    width = exp < 100 ? 2 : 3
-    return string(mantissa, "e", sign, lpad(string(exp), width, '0'))
+    # serde_json / zmij writes the exponent without a leading zero: e-7, e+16.
+    return string(mantissa, "e", sign, abs(dec_exp))
 end
 
 function format_f64(value::Float64)::String
@@ -380,14 +379,22 @@ end
 function f32_list(value, path::AbstractString, limit::Int)::Vector{Float64}
     value isa AbstractVector || throw(payload_error("$path must be an array"))
     check_count(length(value), limit, path)
-    return [as_f32(item, "$path[$index]") for (index, item) in enumerate(value)]
+    return [as_f32(item, "$path[$(index - 1)]") for (index, item) in enumerate(value)]
+end
+
+function optional_metadata(obj)
+    # Option fields without deserialize_with accept a missing key as None.
+    haskey(obj, "metadata") || return nothing
+    metadata = obj["metadata"]
+    metadata === nothing && return nothing
+    return decode_metadata(metadata, "metadata")
 end
 
 function decode_metadata(value, path::AbstractString)::BatchMetadata
     obj = require_object(value, path)
-    latency = require_key(obj, "processing_latency_ns", "$path.processing_latency_ns")
-    if latency !== nothing
-        latency = as_u64(latency, "$path.processing_latency_ns")
+    latency = nothing
+    if haskey(obj, "processing_latency_ns") && obj["processing_latency_ns"] !== nothing
+        latency = as_u64(obj["processing_latency_ns"], "$path.processing_latency_ns")
     end
     source = haskey(obj, "source") ? opt_session(obj["source"], "$path.source") : nothing
     custom = Dict{String,String}()
@@ -439,9 +446,7 @@ function decode_spikes(value)::SpikeBatch
     spikes_raw isa AbstractVector || throw(payload_error("spikes must be an array"))
     check_count(length(spikes_raw), MAX_SPIKE_EVENTS, "spikes")
     spikes = [decode_spike(item, "spikes[$(index - 1)]") for (index, item) in enumerate(spikes_raw)]
-    haskey(obj, "metadata") || throw(payload_error("missing metadata"))
-    metadata = obj["metadata"]
-    decoded_meta = metadata === nothing ? nothing : decode_metadata(metadata, "metadata")
+    decoded_meta = optional_metadata(obj)
     batch = SpikeBatch(
         session,
         as_u64(require_key(obj, "batch_id", "batch_id"), "batch_id"),
@@ -496,9 +501,7 @@ function decode_stimuli(value)::StimulusBatch
         end
         mask = parsed
     end
-    haskey(obj, "metadata") || throw(payload_error("missing metadata"))
-    metadata = obj["metadata"]
-    decoded_meta = metadata === nothing ? nothing : decode_metadata(metadata, "metadata")
+    decoded_meta = optional_metadata(obj)
     validate_metadata(decoded_meta, length(values), "values")
     return StimulusBatch(
         opt_session(require_key(obj, "session_id", "session_id"), "session_id"),
@@ -1110,7 +1113,7 @@ function check_numeric_contract()
         (println(stderr, "16777217 must round to f32 16777216"); exit(1))
     f32_max = Float64(floatmax(Float32))
     expected = [
-        (1e-6, "1e-06"),
+        (1e-6, "1e-6"),
         (1e-5, "0.00001"),
         (1e-4, "0.0001"),
         (1e15, "1000000000000000.0"),
@@ -1120,6 +1123,9 @@ function check_numeric_contract()
         (-0.0, "-0.0"),
         (f32_max, "3.4028234663852886e+38"),
         (Float64(Float32(0.8)), "0.800000011920929"),
+        (Float64(Float32(1e-6)), "9.999999974752427e-7"),
+        (Float64(Float32(1e-5)), "9.999999747378752e-6"),
+        (Float64(Float32(1e20)), "1.0000000200408773e+20"),
     ]
     for (value, text) in expected
         got = format_f64(value)
@@ -1128,8 +1134,44 @@ function check_numeric_contract()
     return nothing
 end
 
+function check_missing_optionals()
+    spikes = decode_message(Vector{UInt8}("{\"Spikes\":{\"batch_id\":1,\"timestamp\":2,\"spikes\":[]}}"))
+    spikes.body isa SpikeBatch && spikes.body.metadata === nothing ||
+        fail("missing_spike_metadata", "missing metadata must decode as null")
+    occursin("\"metadata\":null", bytes_string(encode_canonical(spikes))) ||
+        fail("missing_spike_metadata", "canonical output must include metadata null")
+    partial = Vector{UInt8}(
+        "{\"wire_version\":1,\"payload\":{\"Spikes\":{\"batch_id\":1,\"timestamp\":2,\"spikes\":[],\"metadata\":{\"source\":\"encoder\"}}}}",
+    )
+    decoded = decode_message(partial)
+    decoded.body isa SpikeBatch && decoded.body.metadata !== nothing ||
+        fail("missing_latency", "partial metadata must still decode")
+    decoded.body.metadata.processing_latency_ns === nothing ||
+        fail("missing_latency", "missing processing_latency_ns must be null")
+    decoded.body.metadata.source == "encoder" ||
+        fail("missing_latency", "source must still decode")
+    stimuli = Vector{UInt8}(
+        "{\"wire_version\":1,\"payload\":{\"Stimuli\":{\"session_id\":null,\"batch_id\":1,\"timestamp\":2,\"values\":[0.0],\"valid_mask\":null}}}",
+    )
+    stim = decode_message(stimuli)
+    stim.body isa StimulusBatch && stim.body.metadata === nothing ||
+        fail("missing_stimulus_metadata", "missing metadata must decode as null")
+    try
+        decode_message(Vector{UInt8}(
+            "{\"wire_version\":1,\"payload\":{\"Stimuli\":{\"batch_id\":1,\"timestamp\":2,\"values\":[0.0],\"session_id\":null}}}",
+        ))
+        fail("missing_valid_mask", "expected a rejection")
+    catch err
+        err isa WireError || rethrow()
+        (err.kind == "payload_error" && occursin("valid_mask", err.reason)) ||
+            fail("missing_valid_mask", "unexpected rejection $err")
+    end
+    return nothing
+end
+
 function main()
     check_numeric_contract()
+    check_missing_optionals()
     root = vector_dir()
     manifest = load_manifest(root)
     fixtures = check_manifest_hashes(root, manifest)
