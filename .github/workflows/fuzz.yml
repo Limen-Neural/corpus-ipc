@@ -1,0 +1,70 @@
+name: Fuzz smoke
+# Bounded libFuzzer smoke for the cargo-fuzz targets in fuzz/ (LIM-1277).
+# Linux only: libFuzzer needs nightly Rust plus a C++ toolchain, so the
+# cross-platform `CI` workflow stays libFuzzer-free. Committed regression seeds
+# also replay on stable in `CI` via `cargo test --all-features`
+# (tests/fuzz_regressions.rs). Not continuous fuzzing: every run is time-capped.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Wall-clock budget per target in seconds (1-480; three targets share a 30-minute job)
+        default: "60"
+
+permissions:
+  contents: read
+
+env:
+  FUZZ_TOOLCHAIN: nightly-2026-10-19
+  CARGO_FUZZ_VERSION: 0.13.2
+
+jobs:
+  fuzz-smoke:
+    name: Fuzz smoke (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install pinned nightly
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ env.FUZZ_TOOLCHAIN }}
+
+      - name: Cache cargo registry, git, and cargo-fuzz
+        uses: actions/cache@2f8e54208210a422b2efd51efaa6bd6d7ca8920f # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cargo-fuzz
+          key: ${{ runner.os }}-fuzz-${{ env.CARGO_FUZZ_VERSION }}-${{ hashFiles('fuzz/Cargo.lock') }}
+
+      - name: Install cargo-fuzz
+        run: command -v cargo-fuzz || cargo install cargo-fuzz --version "$CARGO_FUZZ_VERSION" --locked
+
+      - name: Run bounded fuzz smoke
+        env:
+          SECONDS_PER_TARGET: ${{ inputs.seconds || '60' }}
+        run: |
+          # Three sequential targets plus the build must fit timeout-minutes: 30.
+          # At most three digits, so the arithmetic below cannot overflow.
+          if ! [[ "$SECONDS_PER_TARGET" =~ ^[1-9][0-9]{0,2}$ ]] || (( SECONDS_PER_TARGET > 480 )); then
+            echo "seconds must be an integer in 1..480, got: $SECONDS_PER_TARGET" >&2
+            exit 1
+          fi
+          scripts/fuzz-smoke.sh --toolchain "$FUZZ_TOOLCHAIN" --seconds "$SECONDS_PER_TARGET"
+
+      - name: Upload crash artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

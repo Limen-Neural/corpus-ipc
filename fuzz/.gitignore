@@ -1,0 +1,6 @@
+# cargo-fuzz working state. Only fuzz/regressions/ is committed corpus.
+/target/
+/corpus/
+/artifacts/
+/coverage/
+!Cargo.lock

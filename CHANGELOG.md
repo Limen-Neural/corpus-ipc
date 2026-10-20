@@ -53,6 +53,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test-vectors/zmq/` (LIM-1275, LIM-1328). Default decoded readout cap: 1024
   floats (`CORPUS_IPC_ZMQ_MAX_READOUT_FLOATS` override).
 
+- Repository-only cargo-fuzz targets in `fuzz/` (LIM-1277):
+  `fuzz_ipc_message_json` (compatibility decoder), `fuzz_zmq_readout_frame`
+  (`parse_readout_packet` and `ZmqIpcBackend` ingest), and
+  `fuzz_zmq_message_frame` (the structured subscriber's frame decoder). All
+  three check no-panic. The two JSON targets also check `ProtocolLimits`
+  enforcement and canonical round trips; the readout target checks frame
+  bounds, bit-exact decoding, and that the backend cache changes only on
+  accept.
+  `scripts/fuzz-smoke.sh` runs a bounded campaign seeded in place from
+  `test-vectors/`; the Linux-only `Fuzz smoke` workflow runs it for 60 s per
+  target. `tests/fuzz_regressions.rs` replays the same invariants and any
+  committed regression seeds on stable. `fuzz/` is outside the package
+  `include` list, so the published crate gains no dependency or binary.
+- `ZmqMessageSubscriber::decode_frame_for_tests` (`#[doc(hidden)]`, feature
+  `zmq`): the single-frame decoder `try_recv` runs, without a socket. The
+  empty-frame check moved into that decoder; `try_recv` behavior is unchanged.
+
 ### Changed
 
 - `BackendError` gains `Protocol(ProtocolError)` so a hybrid-flow receiver can

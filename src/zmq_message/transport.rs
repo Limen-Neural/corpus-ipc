@@ -317,7 +317,12 @@ fn map_send(result: zmq::Result<()>) -> Result<(), ZmqMessageError> {
     }
 }
 
+/// Decode one received frame. Shared by [`ZmqMessageSubscriber::try_recv`]
+/// and [`ZmqMessageSubscriber::decode_frame_for_tests`].
 fn decode_frame(bytes: &[u8]) -> Result<IpcMessage, ZmqMessageError> {
+    if bytes.is_empty() {
+        return Err(ZmqMessageError::UnexpectedFraming(FramingFault::Empty));
+    }
     let message = decode_ipc_message_json(bytes)?;
     message.validate()?;
     Ok(message)
@@ -473,6 +478,13 @@ impl ZmqMessageSubscriber {
         *lock_socket(&self.socket) = None;
     }
 
+    /// Test/fuzz hook: the frame decoder [`Self::try_recv`] runs on one
+    /// received single-part frame, without a socket.
+    #[doc(hidden)]
+    pub fn decode_frame_for_tests(bytes: &[u8]) -> Result<IpcMessage, ZmqMessageError> {
+        decode_frame(bytes)
+    }
+
     pub(super) fn is_closed(&self) -> bool {
         lock_socket(&self.socket).is_none()
     }
@@ -504,13 +516,6 @@ fn more_frames(socket: &mut ExclusiveSocket) -> Result<bool, ZmqMessageError> {
         .map_err(|err| ZmqMessageError::Transport(err.to_string()))
 }
 
-fn non_empty_frame(bytes: Vec<u8>) -> Result<Vec<u8>, ZmqMessageError> {
-    if bytes.is_empty() {
-        return Err(ZmqMessageError::UnexpectedFraming(FramingFault::Empty));
-    }
-    Ok(bytes)
-}
-
 impl Drop for ZmqMessageSubscriber {
     fn drop(&mut self) {
         *lock_socket(&self.socket) = None;
@@ -533,14 +538,7 @@ fn read_socket_frame(socket: &mut ExclusiveSocket) -> SocketRead {
 fn assemble_frame(socket: &mut ExclusiveSocket, bytes: Vec<u8>) -> SocketRead {
     match more_frames(socket) {
         Ok(true) => after_multipart(socket),
-        Ok(false) => accept_single(bytes),
-        Err(err) => SocketRead::Failed(err),
-    }
-}
-
-fn accept_single(bytes: Vec<u8>) -> SocketRead {
-    match non_empty_frame(bytes) {
-        Ok(bytes) => SocketRead::Frame(bytes),
+        Ok(false) => SocketRead::Frame(bytes),
         Err(err) => SocketRead::Failed(err),
     }
 }
