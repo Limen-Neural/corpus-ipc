@@ -67,11 +67,12 @@ PY
 
 ## Cross-language reuse
 
-The corpus is the conformance target for non-Rust consumers (LIM-1327:
-Python and Julia readers of this golden corpus). A consumer should decode
-each `decode_ok` fixture to the message shape implied by its `variant`, apply
-the same version-before-payload ordering to `negative` fixtures, and treat
-`manifest.json` digests as the integrity check. The normalized domain rules
+The corpus is the conformance target for non-Rust consumers. The offline
+Python and Julia harnesses in [`conformance/`](../../conformance/README.md)
+(LIM-1327) read these files directly: they check every SHA-256, accept each
+`decode_ok` fixture, re-encode the normalized domain, and reject each
+`negative` fixture with the manifest's error class. They do not carry a
+second schema or a second golden corpus. The normalized domain rules
 (finite floats only, `Integer` → `Float`, signed zero preserved) are defined
 in `docs/wire-encoding.md`, not re-specified here.
 
