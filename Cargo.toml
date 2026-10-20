@@ -39,7 +39,7 @@ include = [
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-thiserror = "1.0"
+thiserror = "2.0"
 # JSON is the current IpcMessage encoding. The compatibility envelope inspects
 # `wire_version` on a `serde_json::Value` *before* deserializing the payload,
 # so this is a library dependency (not test-only).

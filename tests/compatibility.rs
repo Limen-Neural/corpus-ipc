@@ -6,10 +6,13 @@
 //! until that lands. They cover the unversioned-as-v1 encoding and the min /
 //! current / min-1 / current+1 envelope boundaries.
 
+use std::error::Error;
+
 use corpus_ipc::{
-    Compatibility, CompatibilityError, EnvelopeError, IpcMessage, SpikeBatch, SpikeEvent,
-    WireCompatibility, WireEnvelope, accept_wire_version, classify_wire_version,
-    decode_ipc_message_json, decode_ipc_message_value, encode_ipc_message_json,
+    CanonicalEncodeError, Compatibility, CompatibilityError, EnvelopeError, IpcMessage, SpikeBatch,
+    SpikeEvent, ValidationError, WireCompatibility, WireEnvelope, accept_wire_version,
+    classify_wire_version, decode_ipc_message_json, decode_ipc_message_value,
+    encode_ipc_message_json,
 };
 use serde_json::Value;
 
@@ -390,4 +393,115 @@ fn compatibility_null_wire_version_is_invalid_version() {
         matches!(err, EnvelopeError::InvalidVersion(ref s) if s == "null"),
         "null wire_version in WireEnvelope should be InvalidVersion(\"null\"), got {err:?}"
     );
+}
+
+#[test]
+fn compatibility_error_display_and_source_stay_stable() {
+    let too_old = CompatibilityError::TooOld { found: 0, min: 1 };
+    assert_eq!(
+        too_old.to_string(),
+        "wire version 0 is too old (minimum supported is 1); upgrade the producer to emit version 1 or newer"
+    );
+    assert!(too_old.source().is_none());
+
+    let too_new = CompatibilityError::TooNew {
+        found: 2,
+        current: 1,
+    };
+    assert_eq!(
+        too_new.to_string(),
+        "wire version 2 is too new (current is 1); upgrade corpus-ipc or have the producer emit version 1 or older"
+    );
+    assert!(too_new.source().is_none());
+
+    let wrapped = EnvelopeError::from(too_old.clone());
+    assert_eq!(wrapped.to_string(), too_old.to_string());
+    assert!(wrapped.source().is_none());
+    assert!(matches!(
+        wrapped,
+        EnvelopeError::Compatibility(CompatibilityError::TooOld { found: 0, min: 1 })
+    ));
+
+    let wrapped_new = EnvelopeError::from(too_new.clone());
+    assert_eq!(wrapped_new.to_string(), too_new.to_string());
+    assert!(wrapped_new.source().is_none());
+    assert!(matches!(
+        wrapped_new,
+        EnvelopeError::Compatibility(CompatibilityError::TooNew {
+            found: 2,
+            current: 1,
+        })
+    ));
+}
+
+#[test]
+fn envelope_error_variants_keep_display_source_and_match() {
+    let unit_cases = [
+        (
+            EnvelopeError::NotAnObject,
+            "compatibility envelope must be a JSON object",
+        ),
+        (
+            EnvelopeError::MissingVersion,
+            "missing wire_version on compatibility envelope",
+        ),
+        (
+            EnvelopeError::InvalidVersion("true".into()),
+            "wire_version must be a non-negative integer fitting u32, got true",
+        ),
+        (
+            EnvelopeError::MissingPayload,
+            "missing payload on compatibility envelope",
+        ),
+    ];
+    for (err, display) in unit_cases {
+        assert_eq!(err.to_string(), display);
+        assert!(err.source().is_none(), "{display}");
+    }
+
+    let json_err = serde_json::from_str::<u32>("true").expect_err("bool is not u32");
+    let json_display = json_err.to_string();
+    let envelope = EnvelopeError::Json(json_err);
+    assert_eq!(
+        envelope.to_string(),
+        format!("envelope JSON error: {json_display}")
+    );
+    assert!(envelope.source().is_none());
+    assert!(matches!(envelope, EnvelopeError::Json(_)));
+
+    let payload_err = serde_json::from_str::<u32>("[]").expect_err("array is not u32");
+    let payload_display = payload_err.to_string();
+    let envelope = EnvelopeError::Payload(payload_err);
+    assert_eq!(
+        envelope.to_string(),
+        format!("failed to decode envelope payload: {payload_display}")
+    );
+    assert!(envelope.source().is_none());
+    assert!(matches!(envelope, EnvelopeError::Payload(_)));
+}
+
+#[test]
+fn canonical_encode_error_keeps_validation_source() {
+    let inner = ValidationError::non_finite("gain", f32::NAN);
+    let inner_display = inner.to_string();
+    assert!(inner.source().is_none());
+    let err = CanonicalEncodeError::from(inner);
+    assert_eq!(
+        err.to_string(),
+        format!("payload failed validation before canonical encoding: {inner_display}")
+    );
+    let source = err.source().expect("validation field is the source");
+    assert_eq!(source.to_string(), inner_display);
+    assert!(source.source().is_none());
+    assert!(matches!(err, CanonicalEncodeError::Validation(_)));
+
+    let json_err = serde_json::from_str::<u32>("true").expect_err("bool is not u32");
+    let json_display = json_err.to_string();
+    let err = CanonicalEncodeError::Json(json_err);
+    assert_eq!(
+        err.to_string(),
+        format!("canonical JSON serialization error: {json_display}")
+    );
+    assert!(err.source().is_none());
+    assert!(matches!(err, CanonicalEncodeError::Json(_)));
 }
