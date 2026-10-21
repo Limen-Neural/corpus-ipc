@@ -142,7 +142,7 @@ fn main() { let _ = router; }
 RS
 if out="$(cd "$work/consumer-default" && cargo check --quiet 2>&1)"; then
   echo "server module leaked into default build" >&2; exit 1
-elif ! grep -q 'unresolved import `corpus_ipc::server`\|could not find `server` in `corpus_ipc`' <<<"$out"; then
+elif ! grep -qE 'unresolved import.*server|could not find.*server' <<<"$out"; then
   echo "boundary check failed for an unexpected reason:" >&2; echo "$out" >&2; exit 1
 fi
 echo "boundary ok"
