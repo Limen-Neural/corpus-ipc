@@ -136,15 +136,18 @@ RS
 (cd "$work/consumer-server" && cargo run --quiet)
 
 banner "boundary: default consumer must NOT see server/zmq"
-cat > "$work/consumer-default/src/main.rs" <<'RS'
-use corpus_ipc::server::router;
-fn main() { let _ = router; }
-RS
-if out="$(cd "$work/consumer-default" && cargo check --quiet 2>&1)"; then
-  echo "server module leaked into default build" >&2; exit 1
-elif ! grep -qE 'unresolved import.*server|could not find.*server' <<<"$out"; then
-  echo "boundary check failed for an unexpected reason:" >&2; echo "$out" >&2; exit 1
-fi
+# One probe per optional surface: each must fail to compile with an
+# unresolved-import error naming that surface.
+probe() { # label import-line expected-pattern
+  printf '%s\nfn main() {}\n' "$2" > "$work/consumer-default/src/main.rs"
+  if out="$(cd "$work/consumer-default" && cargo check --quiet 2>&1)"; then
+    echo "$1 surface leaked into default build" >&2; exit 1
+  elif ! grep -qE "$3" <<<"$out"; then
+    echo "$1 boundary check failed for an unexpected reason:" >&2; echo "$out" >&2; exit 1
+  fi
+}
+probe server 'use corpus_ipc::server::router;' 'unresolved import.*server|could not find.*server'
+probe zmq 'use corpus_ipc::ZmqIpcBackend;' 'unresolved import.*ZmqIpcBackend|no `ZmqIpcBackend`'
 echo "boundary ok"
 
 banner "cargo publish --dry-run --locked (checkout, exact commit)"
