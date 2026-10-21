@@ -147,7 +147,7 @@ probe() { # label import-line expected-pattern
   fi
 }
 probe server 'use corpus_ipc::server::router;' 'unresolved import.*server|could not find.*server'
-probe zmq 'use corpus_ipc::ZmqIpcBackend;' 'unresolved import.*ZmqIpcBackend|no `ZmqIpcBackend`'
+probe zmq 'use corpus_ipc::ZmqIpcBackend;' 'unresolved import.*ZmqIpcBackend|no .*ZmqIpcBackend'
 echo "boundary ok"
 
 banner "cargo publish --dry-run --locked (checkout, exact commit)"
