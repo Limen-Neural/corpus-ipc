@@ -29,7 +29,7 @@ entry point and does not invoke them.
 
 ## Python
 
-CPython >= 3.11. No third-party packages (`conformance/python/requirements.txt`).
+CPython 3.15 (current stable; the suite was run on 3.15.0, and CI installs the latest 3.15 patch). No third-party packages (`conformance/python/requirements.txt`).
 
 ```bash
 python3 conformance/python/check_wire_v1.py

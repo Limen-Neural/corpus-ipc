@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (LIM-1327). They read the hashed golden corpus in `test-vectors/wire-v1/`
   (RM-1330 / LIM-1446) and check the same decode, `f32` normalization,
   `neuron_id` alias, and negative outcomes as the Rust vector tests. Linux CI
-  runs them in a separate job on current stable Julia 1.13. The default Rust
+  runs them in a separate job on current stable Python 3.15 and Julia 1.13.
+  The default Rust
   build does not depend on
   Python or Julia.
 
