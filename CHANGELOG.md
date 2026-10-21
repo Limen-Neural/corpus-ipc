@@ -16,9 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (RM-1330 / LIM-1446) and check the same decode, `f32` normalization,
   `neuron_id` alias, and negative outcomes as the Rust vector tests. Linux CI
   runs them in a separate job on current stable Python 3.15 and Julia 1.13.
-  The default Rust
-  build does not depend on
-  Python or Julia.
+  The default Rust build does not depend on Python or Julia.
 
 - Structured ZeroMQ `IpcMessage` transport behind the `zmq` feature (LIM-1278,
   consolidating LIM-1330). `ZmqMessagePublisher` binds and `ZmqMessageSubscriber`
