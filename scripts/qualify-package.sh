@@ -9,6 +9,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/corpus-ipc-qualify.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d" " -f1; }
 banner() { printf '\n==== %s ====\n' "$*"; }
 
 cd "$root"
@@ -32,8 +33,8 @@ done
 banner "cargo package --locked (verifies by building)"
 cargo package --locked
 crate="$root/target/package/$name.crate"
-echo "sha256: $(sha256sum "$crate" | cut -d' ' -f1)"
-echo "size:   $(stat -c %s "$crate") bytes"
+echo "sha256: $(sha256 "$crate")"
+echo "size:   $(wc -c < "$crate" | tr -d " ") bytes"
 
 banner "extract outside the checkout"
 mkdir "$work/ex"
@@ -145,4 +146,4 @@ cd "$root"
 unset CARGO_TARGET_DIR
 cargo publish --dry-run --locked
 
-banner "qualified $sha $name sha256=$(sha256sum "$crate" | cut -d' ' -f1)"
+banner "qualified $sha $name sha256=$(sha256 "$crate")"
