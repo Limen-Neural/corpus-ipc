@@ -32,6 +32,11 @@ CC=gcc CXX=g++ scripts/verify.sh --mode full   # if clang can't find libstdc++
 scripts/verify.sh --mode full --jobs 4         # opt-in Cargo jobs cap (heavy all-features phases only)
 ```
 
+`scripts/qualify-package.sh` qualifies the packaged artifact: it packages, extracts outside the
+checkout, tests every feature set there, builds default/zmq/server consumer crates against the
+extraction, runs rustdoc `-D warnings` and `cargo publish --dry-run --locked` (never uploads; needs a
+clean tree and a C++ compiler).
+
 Fast mode = `cargo fmt --check`, `cargo check --no-default-features`, `cargo
 check --features server`, and the boundary assertion that the default tree
 excludes axum/tokio/tower/zmq. Full mode adds a discrete `cargo check --features
