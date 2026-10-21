@@ -47,6 +47,11 @@ with gcc/g++:
 CC=gcc CXX=g++ scripts/verify.sh --mode full
 ```
 
+`scripts/qualify-package.sh` qualifies the packaged artifact: it packages, extracts outside the
+checkout, tests every feature set there, builds default/zmq/server consumer crates against the
+extraction, runs rustdoc `-D warnings` and `cargo publish --dry-run --locked` (never uploads; needs a
+clean tree and a C++ compiler).
+
 Parallelism: the `--all-features`/`zmq` build is the parallelism-heavy phase
 (see `docs/compile-cost.md`: ~86.6 s at `-j1` vs ~15.8 s at `-j8` on an 8-core
 box). An **opt-in** cap (`--jobs N` or `CARGO_BUILD_JOBS=N`, equivalent — `--jobs`
