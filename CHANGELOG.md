@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Offline Python and Julia wire-v1 conformance harnesses under `conformance/`
+  (LIM-1327). They read the hashed golden corpus in `test-vectors/wire-v1/`
+  (RM-1330 / LIM-1446) and check the same decode, `f32` normalization,
+  `neuron_id` alias, and negative outcomes as the Rust vector tests. Linux CI
+  runs them in a separate job on current stable Python 3.15 and Julia 1.13.
+  The default Rust build does not depend on Python or Julia.
+
 - Structured ZeroMQ `IpcMessage` transport behind the `zmq` feature (LIM-1278,
   consolidating LIM-1330). `ZmqMessagePublisher` binds and `ZmqMessageSubscriber`
   connects; each message is one compact canonical JSON `WireEnvelope` of

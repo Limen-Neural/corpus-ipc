@@ -43,6 +43,10 @@ junit.xml
 !.devin/blueprint.yaml
 !kilocodeignore
 
+# --- Python (conformance harness; stdlib only, no package install) ---
+__pycache__/
+*.pyc
+
 # --- Standard dev + your data ---
 node_modules/
 dist/

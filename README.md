@@ -275,6 +275,11 @@ in [`test-vectors/wire-v1/`](test-vectors/wire-v1/README.md) (repository-only,
 not packaged). `manifest.json` records each fixture's SHA-256 and decode
 expectation for cross-language consumers.
 
+Offline Python and Julia harnesses in [`conformance/`](conformance/README.md)
+read those same hashed files and check the Rust decode, f32 normalization,
+and negative outcomes. They are not part of the crate build. Linux CI runs
+them in a separate job.
+
 ## Crate Exports
 
 - Backends and traits:
