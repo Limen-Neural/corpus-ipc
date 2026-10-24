@@ -88,7 +88,9 @@ sha2 = "0.10"
 tower = { version = "0.5", features = ["util"] }
 
 [package.metadata.docs.rs]
-# docs.rs provides a C++ toolchain for zmq-sys (vendored libzmq).
+# Document the default surface and the optional `zmq` and `server` APIs.
+# docs.rs provides a C++ toolchain for zmq-sys (vendored libzmq) and passes
+# `--cfg docsrs` to rustdoc.
 all-features = true
 
 [workspace]
