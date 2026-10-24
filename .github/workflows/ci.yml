@@ -21,8 +21,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # libzmq 4.3.4 SIGSEGVs in pipe_t::process_pipe_term_ack on the
-      # ubuntu-26.04 runner (zeromq/libzmq#4806). Linux compiles go through
+      # libzmq 4.3.4 double-frees ypipe storage in pipe_t::process_pipe_term_ack
+      # (zeromq/libzmq#4806). Linux compiles go through
       # scripts/cxx-libzmq-pipefix.sh, which applies the upstream fix.
       - name: Use patched libzmq C++ driver
         if: runner.os == 'Linux'
@@ -132,23 +132,7 @@ jobs:
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
       - name: Test all features
-        run: |
-          set +e
-          cargo test --all-features --locked
-          code=$?
-          if [ "$code" -ne 0 ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq gdb
-            bin=$(find target/debug/deps -maxdepth 1 -type f -executable -name 'corpus_ipc-*' | head -1)
-            echo "segfault binary=$bin"
-            gdb -batch \
-              -ex 'set pagination off' \
-              -ex 'set confirm off' \
-              -ex 'run' \
-              -ex 'thread apply all bt' \
-              --args "$bin" --test-threads=8
-          fi
-          exit "$code"
+        run: cargo test --all-features --locked
 
       - name: Canonical encode vs serde_json arbitrary_precision
         run: cargo test -p ap-check --locked

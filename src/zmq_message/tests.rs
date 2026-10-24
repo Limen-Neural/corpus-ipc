@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::*;
+use crate::zmq_context::shared_context;
 use crate::{
     ConfigPayload, ConfigValue, EmbeddingBatch, GradientBatch, GradientUpdate, IpcMessage,
     NeuromodulatorSnapshot, SpikeBatch, SpikeEvent, StimulusBatch, TraceBatch, TraceData,
@@ -22,7 +23,7 @@ pub(super) fn unique_endpoint() -> String {
 }
 
 pub(super) fn raw_publisher(endpoint: &str) -> zmq::Socket {
-    let context = zmq::Context::new();
+    let context = shared_context();
     let socket = context.socket(zmq::PUB).expect("raw PUB socket");
     socket.set_linger(0).expect("linger");
     socket.bind(endpoint).expect("raw bind");
@@ -30,7 +31,7 @@ pub(super) fn raw_publisher(endpoint: &str) -> zmq::Socket {
 }
 
 pub(super) fn raw_subscriber(endpoint: &str) -> zmq::Socket {
-    let context = zmq::Context::new();
+    let context = shared_context();
     let socket = context.socket(zmq::SUB).expect("raw SUB socket");
     socket.set_linger(0).expect("linger");
     socket.set_subscribe(b"").expect("subscribe");
