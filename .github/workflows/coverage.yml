@@ -25,6 +25,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # llvm-cov runs the same all-features suite that SIGSEGVs in libzmq
+      # 4.3.4 on ubuntu-26.04 unless pipe.cpp is patched at compile time.
+      - name: Use patched libzmq C++ driver
+        run: |
+          echo "CORPUS_IPC_REAL_CXX=${CXX:-g++}" >> "$GITHUB_ENV"
+          echo "CXX=$GITHUB_WORKSPACE/scripts/cxx-libzmq-pipefix.sh" >> "$GITHUB_ENV"
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:

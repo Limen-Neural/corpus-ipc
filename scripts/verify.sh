@@ -183,6 +183,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Compile vendored libzmq with the pipe_term_ack shutdown fix. An explicit
+# CXX (the documented `CXX=g++` workaround) stays the real compiler.
+if [[ "${CXX:-}" != *cxx-libzmq-pipefix.sh ]]; then
+    export CORPUS_IPC_REAL_CXX="${CXX:-${CORPUS_IPC_REAL_CXX:-g++}}"
+    export CXX="$SCRIPT_DIR/cxx-libzmq-pipefix.sh"
+fi
+
 # --- phase machinery -------------------------------------------------------
 
 PHASE_TOTAL=0
