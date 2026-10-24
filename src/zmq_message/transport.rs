@@ -3,6 +3,7 @@
 use std::sync::{Mutex, MutexGuard};
 
 use crate::validation::Validate;
+use crate::zmq_context::shared_context;
 use crate::{
     CanonicalEncodeError, IpcMessage, ValidationKind, decode_ipc_message_json,
     encode_canonical_ipc_message,
@@ -356,7 +357,7 @@ pub struct ZmqMessagePublisher {
 impl ZmqMessagePublisher {
     /// Bind a PUB socket. Options from `config` are applied before `bind`.
     pub fn bind(config: ZmqTransportConfig) -> Result<Self, ZmqMessageError> {
-        let context = zmq::Context::new();
+        let context = shared_context();
         let socket = open_socket(&context, zmq::PUB, &config, SocketMode::Bind)?;
         Ok(Self {
             socket: Mutex::new(Some(socket)),
@@ -442,7 +443,7 @@ impl ZmqMessageSubscriber {
     /// Options from `config` are applied before `connect`. The subscription is
     /// installed before `connect` so libzmq replays it on reconnect.
     pub fn connect(config: ZmqTransportConfig) -> Result<Self, ZmqMessageError> {
-        let context = zmq::Context::new();
+        let context = shared_context();
         let socket = open_socket(&context, zmq::SUB, &config, SocketMode::Connect)?;
         Ok(Self {
             socket: Mutex::new(Some(socket)),

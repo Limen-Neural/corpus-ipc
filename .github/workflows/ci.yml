@@ -21,6 +21,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # Vendored libzmq 4.3.4 SIGSEGVs on Ubuntu 26.04 during command-queue
+      # writes (misaligned command_t chunks; zeromq/libzmq#4806 shutdown).
+      # Linux compiles go through scripts/cxx-libzmq-pipefix.sh.
+      - name: Use patched libzmq C++ driver
+        if: runner.os == 'Linux'
+        run: |
+          echo "CORPUS_IPC_REAL_CXX=${CXX:-g++}" >> "$GITHUB_ENV"
+          echo "CXX=$GITHUB_WORKSPACE/scripts/cxx-libzmq-pipefix.sh" >> "$GITHUB_ENV"
+
       - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
@@ -94,6 +103,12 @@ jobs:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
         with:
           persist-credentials: false
+
+      # Same libzmq command-queue fix as the validate job. This job is Linux-only.
+      - name: Use patched libzmq C++ driver
+        run: |
+          echo "CORPUS_IPC_REAL_CXX=${CXX:-g++}" >> "$GITHUB_ENV"
+          echo "CXX=$GITHUB_WORKSPACE/scripts/cxx-libzmq-pipefix.sh" >> "$GITHUB_ENV"
 
       - name: Install Rust 1.99.0
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable

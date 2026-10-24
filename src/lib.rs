@@ -64,6 +64,8 @@ pub mod validation;
 #[cfg(feature = "zmq")]
 pub mod zmq_backend;
 #[cfg(feature = "zmq")]
+mod zmq_context;
+#[cfg(feature = "zmq")]
 pub mod zmq_message;
 #[cfg(feature = "zmq")]
 pub mod zmq_readout;

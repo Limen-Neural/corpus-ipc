@@ -150,10 +150,10 @@ Golden little-endian fixtures and a SHA-256 manifest live under
 
 ```toml
 [dependencies]
-corpus-ipc = "0.1"
+corpus-ipc = "0.2"
 
 # Optional ZMQ backend support
-# corpus-ipc = { version = "0.1", features = ["zmq"] }
+# corpus-ipc = { version = "0.2", features = ["zmq"] }
 ```
 
 Development / unreleased-main option (tracks `main`, not a registry release):

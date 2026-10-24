@@ -2,7 +2,7 @@
 
 [package]
 name = "corpus-ipc"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.99.0"
 license = "MIT OR Apache-2.0"
@@ -29,6 +29,8 @@ categories = ["science::neuroscience", "network-programming", "encoding"]
 # package` / `cargo publish` verify the packaged sources by building them.
 include = [
     "/src/**/*.rs",
+    "/src/zmq_api_lock.cpp",
+    "/build.rs",
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE-MIT",
@@ -86,8 +88,8 @@ sha2 = "0.10"
 tower = { version = "0.5", features = ["util"] }
 
 [package.metadata.docs.rs]
-# Default crate only. The `zmq` feature compiles vendored C++ via zmq-sys.
-all-features = false
+# docs.rs provides a C++ toolchain for zmq-sys (vendored libzmq).
+all-features = true
 
 [workspace]
 # `ci/ap-check` is a CI-only member (publish = false) that proves canonical
