@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-24
+
 ### Added
 
 - Offline Python and Julia wire-v1 conformance harnesses under `conformance/`
@@ -255,4 +257,8 @@ the accepted range.
 version.** Keep at least one committed fixture for every still-supported
 version, including the unversioned-as-v1 encoding while
   `LEGACY_UNVERSIONED` remains inside the window.
+
+[Unreleased]: https://github.com/Limen-Neural/corpus-ipc/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Limen-Neural/corpus-ipc/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/Limen-Neural/corpus-ipc/releases/tag/v0.1.0
 

@@ -32,6 +32,9 @@
 //!   [`IpcBackend::get_spike_states`] concurrently with each other, but not
 //!   with a `&mut self` call (ordinary Rust aliasing). The REST server wraps
 //!   a backend in `Arc<Mutex<Box<dyn IpcBackend>>>`.
+//! - **Context**: every socket in this crate uses one process-wide libzmq
+//!   context. libzmq 4.3.4 segfaults in the command mailbox when several
+//!   contexts call `zmq_connect` concurrently.
 //! - **Initialize**: creates, subscribes, and connects the SUB socket on the
 //!   calling thread, then stores it under the mutex. Idempotent after success.
 //! - **Process**: drains non-blocking `recv` calls (`zmq::DONTWAIT`) under the
@@ -44,6 +47,7 @@
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use crate::zmq_context::shared_context;
 use crate::zmq_readout::{max_readout_float_limit, parse_readout_packet};
 use crate::{BackendError, IpcBackend};
 
@@ -210,7 +214,7 @@ impl ZmqIpcBackend {
     /// enabled but the external publisher is not yet running.
     pub fn new() -> Self {
         Self {
-            context: zmq::Context::new(),
+            context: shared_context(),
             sub_socket: Mutex::new(None),
             initialized: false,
             last_readout: Vec::new(),
@@ -555,6 +559,7 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
+    use crate::zmq_context::shared_context;
 
     fn unique_test_endpoint() -> String {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -576,7 +581,7 @@ mod tests {
 
     fn connected_pub_sub() -> (zmq::Socket, ZmqIpcBackend) {
         let endpoint = unique_test_endpoint();
-        let context = zmq::Context::new();
+        let context = shared_context();
         let publisher = context.socket(zmq::PUB).unwrap();
         publisher.bind(&endpoint).unwrap();
 
@@ -628,7 +633,7 @@ mod tests {
             "no publisher yet: empty cache on EAGAIN"
         );
 
-        let context = zmq::Context::new();
+        let context = shared_context();
         let publisher = context.socket(zmq::PUB).unwrap();
         publisher.bind(&endpoint).unwrap();
 
@@ -643,7 +648,7 @@ mod tests {
     /// the SUB socket reconnects and re-subscribes without a `reset()`.
     #[test]
     fn publisher_restart_on_same_ipc_endpoint_recovers() {
-        let context = zmq::Context::new();
+        let context = shared_context();
         let first = context.socket(zmq::PUB).unwrap();
         first.bind(&unique_test_endpoint()).unwrap();
         publisher_restart_on_same_endpoint_recovers(&context, first);
@@ -654,7 +659,7 @@ mod tests {
     /// another process could claim before the bind.
     #[test]
     fn publisher_restart_on_same_tcp_endpoint_recovers() {
-        let context = zmq::Context::new();
+        let context = shared_context();
         let first = context.socket(zmq::PUB).unwrap();
         first.bind("tcp://127.0.0.1:0").unwrap();
         publisher_restart_on_same_endpoint_recovers(&context, first);
@@ -696,7 +701,7 @@ mod tests {
     fn reset_then_initialize_at_replacement_endpoint() {
         let stale_endpoint = unique_test_endpoint();
         let live_endpoint = unique_test_endpoint();
-        let context = zmq::Context::new();
+        let context = shared_context();
         let publisher = context.socket(zmq::PUB).unwrap();
         publisher.bind(&live_endpoint).unwrap();
 
