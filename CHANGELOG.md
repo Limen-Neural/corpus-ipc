@@ -85,7 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ProtocolError`, `CompatibilityError`, `EnvelopeError`, and
   `CanonicalEncodeError` keep the same Display text, `Error::source`
   results, and variant matches. Compatible lockfile updates are included.
-  The Axum crate stays 0.8. The crate version stays 0.1.0.
+  The Axum crate stays 0.8. This work landed on `main` while semver was still
+  0.1.0; this release cuts **0.2.0**.
 
 - `BackendError` gains `Protocol(ProtocolError)` so a hybrid-flow receiver can
   report an unexpected `IpcMessage` variant without overloading transport or
@@ -97,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (description, keywords `snn` / `neuromorphic` / `spiking` / `ipc` / `zmq`,
   categories `science::neuroscience`, `network-programming`, `encoding`).
   The README intro and crate-level docs use the same sentence. No API change
-  and no version bump (GitHub #53, LIM-1524).
+  (GitHub #53, LIM-1524); crate semver was still 0.1.0 until this 0.2.0 cut.
 
 - **0.1 REST → v0.2 REST migration (not wire-compatible).** The 0.1 server
   answered every application-level result with HTTP 200 and
