@@ -2,7 +2,7 @@
 
 [package]
 name = "corpus-ipc"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.99.0"
 license = "MIT OR Apache-2.0"
@@ -86,8 +86,9 @@ sha2 = "0.10"
 tower = { version = "0.5", features = ["util"] }
 
 [package.metadata.docs.rs]
-# Default crate only. The `zmq` feature compiles vendored C++ via zmq-sys.
-all-features = false
+# Document the default surface and the optional `zmq` and `server` APIs.
+# docs.rs builds vendored libzmq and passes `--cfg docsrs` to rustdoc.
+all-features = true
 
 [workspace]
 # `ci/ap-check` is a CI-only member (publish = false) that proves canonical
