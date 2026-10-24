@@ -29,6 +29,8 @@ categories = ["science::neuroscience", "network-programming", "encoding"]
 # package` / `cargo publish` verify the packaged sources by building them.
 include = [
     "/src/**/*.rs",
+    "/src/zmq_api_lock.cpp",
+    "/build.rs",
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE-MIT",
