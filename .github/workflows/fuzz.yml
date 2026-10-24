@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
 
       # Fuzz targets link the zmq feature, so they need the same libzmq
-      # pipe_term_ack fix as the CI test jobs.
+      # command-queue fix as the CI test jobs.
       - name: Use patched libzmq C++ driver
         run: |
           echo "CORPUS_IPC_REAL_CXX=${CXX:-g++}" >> "$GITHUB_ENV"

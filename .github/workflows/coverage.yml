@@ -25,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # llvm-cov links the zmq feature, so it needs the libzmq pipe_term_ack fix.
+      # llvm-cov links the zmq feature, so it needs the libzmq command-queue fix.
       - name: Use patched libzmq C++ driver
         run: |
           echo "CORPUS_IPC_REAL_CXX=${CXX:-g++}" >> "$GITHUB_ENV"
