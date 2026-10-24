@@ -132,7 +132,23 @@ jobs:
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
       - name: Test all features
-        run: cargo test --all-features --locked
+        run: |
+          set +e
+          cargo test --all-features --locked
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq gdb
+            bin=$(find target/debug/deps -maxdepth 1 -type f -executable -name 'corpus_ipc-*' | head -1)
+            echo "segfault binary=$bin"
+            gdb -batch \
+              -ex 'set pagination off' \
+              -ex 'set confirm off' \
+              -ex 'run' \
+              -ex 'thread apply all bt' \
+              --args "$bin" --test-threads=8
+          fi
+          exit "$code"
 
       - name: Canonical encode vs serde_json arbitrary_precision
         run: cargo test -p ap-check --locked
