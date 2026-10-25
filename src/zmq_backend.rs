@@ -941,12 +941,19 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut worst = Duration::ZERO;
         let mut output = Vec::new();
-        let skipped_before = backend.skipped_readouts();
-        // A drain that supersedes valid frames proves a backlog was exercised.
-        while backend.skipped_readouts() == skipped_before && Instant::now() < deadline {
+        // The warm-up leaves tick-1 duplicates that count as skipped, so
+        // measure the backlog only from the first flooded frame onward: a
+        // later drain must supersede valid frames to prove it faced a queue.
+        let mut skipped_at_flood: Option<u64> = None;
+        let mut backlog_drained = false;
+        while !backlog_drained && Instant::now() < deadline {
             let started = Instant::now();
             output = backend.process_batch(&[]).unwrap();
             worst = worst.max(started.elapsed());
+            if backend.tick() > 1 {
+                let baseline = *skipped_at_flood.get_or_insert(backend.skipped_readouts());
+                backlog_drained = backend.skipped_readouts() > baseline;
+            }
             std::thread::sleep(Duration::from_micros(200));
         }
         running.store(false, Ordering::Relaxed);
@@ -955,10 +962,7 @@ mod tests {
             worst < Duration::from_millis(100),
             "bounded drain must return promptly under sustained publish load"
         );
-        assert!(
-            backend.skipped_readouts() > skipped_before,
-            "no drain processed more than one queued frame"
-        );
+        assert!(backlog_drained, "no drain faced a backlog of flooded frames");
         assert!(backend.tick() > 1, "no flooded frame was observed");
         assert_eq!(output[0], backend.tick() as f32);
     }
