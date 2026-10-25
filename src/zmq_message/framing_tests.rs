@@ -18,6 +18,17 @@ fn publisher_rejects_invalid_payloads_without_sending() {
     let publisher = ZmqMessagePublisher::bind(ZmqTransportConfig::new(&endpoint)).unwrap();
     let subscriber = ZmqMessageSubscriber::connect(ZmqTransportConfig::new(&endpoint)).unwrap();
     expect_message(&publisher, &subscriber, &IpcMessage::Ping);
+    // `expect_message` resends until it sees the message, so duplicates may
+    // still be in flight or queued. Drain them before asserting silence.
+    let mut quiet = 0;
+    while quiet < 3 {
+        thread::sleep(Duration::from_millis(30));
+        match subscriber.try_recv() {
+            Ok(_) => quiet = 0,
+            Err(ZmqMessageError::WouldBlock) => quiet += 1,
+            Err(err) => panic!("{err}"),
+        }
+    }
 
     let invalid = IpcMessage::Stimuli(StimulusBatch {
         session_id: None,
