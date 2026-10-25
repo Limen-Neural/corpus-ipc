@@ -6,8 +6,9 @@
 [![Codecov](https://codecov.io/gh/Limen-Neural/corpus-ipc/branch/main/graph/badge.svg)](https://codecov.io/gh/Limen-Neural/corpus-ipc)
 [![Crates.io](https://img.shields.io/crates/v/corpus-ipc.svg)](https://crates.io/crates/corpus-ipc)
 [![docs.rs](https://docs.rs/corpus-ipc/badge.svg)](https://docs.rs/corpus-ipc)
-[![Codacy code quality](https://img.shields.io/badge/code_quality-Codacy-2A5DB0?logo=codacy)](https://app.codacy.com/gh/Limen-Neural/corpus-ipc/dashboard)
-[![Qlty maintainability](https://img.shields.io/badge/maintainability-Qlty-6C47FF)](https://qlty.sh/gh/Limen-Neural/projects/corpus-ipc)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/ec4e6b06c4ae4bc5935c078aab138a26)](https://app.codacy.com/gh/Limen-Neural/corpus-ipc/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![Maintainability](https://qlty.sh/gh/Limen-Neural/projects/corpus-ipc/maintainability.svg)](https://qlty.sh/gh/Limen-Neural/projects/corpus-ipc)
+[![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Limen-Neural/corpus-ipc?utm_source=oss&utm_medium=github&utm_campaign=Limen-Neural%2Fcorpus-ipc&labelColor=171717&color=FF570A&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 Spike and neuromodulator wire protocol and IPC transports for Limen-Neural SNN runtimes.
@@ -153,15 +154,14 @@ readout backend. `zmq-sys` 0.12 builds `zeromq-src` 0.2.6 (libzmq 4.3.4).
 That release can SIGSEGV in `ypipe_t<command_t>::write` on newer toolchains
 (observed on Ubuntu 26.04 while several sockets connect at once) and
 double-frees on pipe shutdown (zeromq/libzmq#4806). This crate shares one
-process-wide context and, on Linux, links a recursive mutex around libzmq
-socket setup calls (`build.rs` + `src/zmq_api_lock.cpp`), but Cargo applies
-that link wrapper only to this crate's own binaries and tests, not to a
-downstream consumer's binary. This repository's CI additionally compiles
+process-wide context but ships no libzmq patch. This repository's CI compiles
 libzmq through `scripts/cxx-libzmq-pipefix.sh`, a source patch that is not
 part of the published crate. A consumer who hits the crash can copy that
 script from the repository and use it as `CXX`, but it rewrites `yqueue.hpp`
 in place inside the shared Cargo registry copy of `zeromq-src`, which changes
-the build of every project on that machine that uses `zmq-sys` 0.12.
+the build of every project on that machine that uses `zmq-sys` 0.12. Prefer an
+isolated `CARGO_HOME` for that build, or restore the registry header
+afterward.
 
 ## Installation
 
