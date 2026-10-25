@@ -962,7 +962,10 @@ mod tests {
             worst < Duration::from_millis(100),
             "bounded drain must return promptly under sustained publish load"
         );
-        assert!(backlog_drained, "no drain faced a backlog of flooded frames");
+        assert!(
+            backlog_drained,
+            "no drain faced a backlog of flooded frames"
+        );
         assert!(backend.tick() > 1, "no flooded frame was observed");
         assert_eq!(output[0], backend.tick() as f32);
     }
