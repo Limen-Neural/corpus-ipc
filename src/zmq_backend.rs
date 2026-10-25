@@ -941,16 +941,23 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut worst = Duration::ZERO;
         let mut output = Vec::new();
-        while backend.tick() <= 1 && Instant::now() < deadline {
+        let skipped_before = backend.skipped_readouts();
+        // A drain that supersedes valid frames proves a backlog was exercised.
+        while backend.skipped_readouts() == skipped_before && Instant::now() < deadline {
             let started = Instant::now();
             output = backend.process_batch(&[]).unwrap();
             worst = worst.max(started.elapsed());
+            std::thread::sleep(Duration::from_micros(200));
         }
         running.store(false, Ordering::Relaxed);
         flooder.join().expect("flooder panicked");
         assert!(
             worst < Duration::from_millis(100),
             "bounded drain must return promptly under sustained publish load"
+        );
+        assert!(
+            backend.skipped_readouts() > skipped_before,
+            "no drain processed more than one queued frame"
         );
         assert!(backend.tick() > 1, "no flooded frame was observed");
         assert_eq!(output[0], backend.tick() as f32);
