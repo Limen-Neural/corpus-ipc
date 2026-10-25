@@ -242,9 +242,10 @@ wire format.
 ### Stimulus and neuromodulator ingress
 
 `corpus-ipc` owns the wire schema for stimulus and neuromodulator ingress.
-A producer encodes, and a consumer decodes, these messages as
 `IpcMessage::Stimuli(StimulusBatch)` and
-`IpcMessage::Neuromodulators(NeuromodulatorSnapshot)` instead of bespoke UDP
+`IpcMessage::Neuromodulators(NeuromodulatorSnapshot)` carry the payload. A
+producer encodes with `encode_canonical_ipc_message` and a consumer decodes
+with `decode_ipc_message_json`, which enforces the wire version, instead of bespoke UDP
 JSON or a private packet struct. `StimulusBatch` is domain-neutral: its
 `values` width is not fixed by this crate (do not encode any one network's
 axon/channel count here), and an optional `valid_mask` lets a channel be
