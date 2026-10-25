@@ -241,16 +241,9 @@ wire format.
 
 ### Stimulus and neuromodulator ingress
 
-`corpus-ipc` is the schema owner for the stimulus/neuromodulator leg of the
-sensory pipeline. The intended flow is:
-
-```text
-thalamic-relay -> corpus-ipc -> brainstem-daemon
- sensory/safety    wire/schema      SNN runtime
-```
-
-`thalamic-relay` and `brainstem-daemon` encode/decode through
-`IpcMessage::Stimuli(StimulusBatch)` and
+`corpus-ipc` owns the wire schema for stimulus and neuromodulator ingress.
+A sensory-side producer and a runtime-side consumer both encode and decode
+through `IpcMessage::Stimuli(StimulusBatch)` and
 `IpcMessage::Neuromodulators(NeuromodulatorSnapshot)` instead of bespoke UDP
 JSON or a private packet struct. `StimulusBatch` is domain-neutral: its
 `values` width is not fixed by this crate (do not encode any one network's
