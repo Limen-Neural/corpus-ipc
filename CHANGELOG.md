@@ -86,8 +86,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Direct dependency `thiserror` is 2.x (LIM-1451). `BackendError`,
   `ProtocolError`, `CompatibilityError`, `EnvelopeError`, and
   `CanonicalEncodeError` keep the same Display text, `Error::source`
-  results, and variant matches. Compatible lockfile updates are included.
-  The Axum crate stays 0.8. Wire version stays 1.
+  results, and variant matches. Compatible lockfile updates are included;
+  the shipped `Cargo.lock` pins `tokio` 1.54.1 (1.54.0 was yanked for
+  RUSTSEC-2026-0384). The Axum crate stays 0.8. Wire version stays 1.
+
+- Every ZeroMQ socket in this crate now uses one process-wide libzmq context
+  (`zmq_context`), kept alive until process exit. 0.1.0 created one context
+  per `ZmqIpcBackend`. libzmq 4.3.4 corrupts its command mailbox when several
+  contexts call `zmq_connect` concurrently.
+
+- The package now ships `build.rs` and `src/zmq_api_lock.cpp`. With the `zmq`
+  feature on Linux, the build script compiles that file with `$CXX` (default
+  `g++`) and serializes libzmq socket create/connect/bind/close/sockopt calls
+  behind one recursive mutex via `-Wl,--wrap`. Cargo applies a dependency's
+  `rustc-link-arg` only to this crate's own binaries and tests, so the wrap
+  protects `corpus_ipc_server` and the in-repo test targets, not a downstream
+  consumer's binary. Known issue: vendored libzmq 4.3.4 (`zeromq-src` 0.2.6
+  via `zmq-sys` 0.12) can SIGSEGV in `ypipe_t<command_t>::write` on newer
+  toolchains (seen on Ubuntu 26.04) and double-frees on pipe shutdown
+  (zeromq/libzmq#4806). This repository's CI compiles libzmq through
+  `scripts/cxx-libzmq-pipefix.sh`, which patches both at build time; that
+  patch is repository-only and does not reach consumers.
 
 - `BackendError` gains `Protocol(ProtocolError)` so a hybrid-flow receiver can
   report an unexpected `IpcMessage` variant without overloading transport or

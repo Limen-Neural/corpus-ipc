@@ -146,6 +146,23 @@ readout on `EAGAIN` (no error).
 Golden little-endian fixtures and a SHA-256 manifest live under
 `test-vectors/zmq/` (repo-only, not in the crates.io allow-list).
 
+### Known issue: vendored libzmq 4.3.4
+
+This applies to every `zmq` socket this crate opens, not only the binary
+readout backend. `zmq-sys` 0.12 builds `zeromq-src` 0.2.6 (libzmq 4.3.4).
+That release can SIGSEGV in `ypipe_t<command_t>::write` on newer toolchains
+(observed on Ubuntu 26.04 while several sockets connect at once) and
+double-frees on pipe shutdown (zeromq/libzmq#4806). This crate shares one
+process-wide context and, on Linux, links a recursive mutex around libzmq
+socket setup calls (`build.rs` + `src/zmq_api_lock.cpp`), but Cargo applies
+that link wrapper only to this crate's own binaries and tests, not to a
+downstream consumer's binary. This repository's CI additionally compiles
+libzmq through `scripts/cxx-libzmq-pipefix.sh`, a source patch that is not
+part of the published crate. A consumer who hits the crash can copy that
+script from the repository and use it as `CXX`, but it rewrites `yqueue.hpp`
+in place inside the shared Cargo registry copy of `zeromq-src`, which changes
+the build of every project on that machine that uses `zmq-sys` 0.12.
+
 ## Installation
 
 ```toml

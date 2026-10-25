@@ -47,6 +47,10 @@ with gcc/g++:
 CC=gcc CXX=g++ scripts/verify.sh --mode full
 ```
 
+`scripts/cxx-libzmq-pipefix.sh` (the `CXX` that `verify.sh` and CI use) rewrites
+`yqueue.hpp` **in place** inside the cargo registry copy of `zeromq-src`, so every
+other project on that machine that builds `zmq-sys` 0.12 gets the patched header.
+
 `scripts/qualify-package.sh` qualifies the packaged artifact: it packages, extracts outside the
 checkout, tests every feature set there, builds default/zmq/server consumer crates against the
 extraction, runs rustdoc `-D warnings` and `cargo publish --dry-run --locked` (never uploads; needs a
