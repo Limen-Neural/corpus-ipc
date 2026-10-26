@@ -404,10 +404,8 @@ pub fn decode_ipc_message_json(bytes: &[u8]) -> Result<IpcMessage, EnvelopeError
         }
         Err(EnvelopeError::Json(raw_error)) => {
             let value = serde_json::from_slice::<Value>(bytes).map_err(EnvelopeError::Json)?;
-            if let Value::Object(obj) = &value {
-                if obj.contains_key("wire_version") {
-                    return Err(EnvelopeError::Json(raw_error));
-                }
+            if matches!(&value, Value::Object(obj) if obj.contains_key("wire_version")) {
+                return Err(EnvelopeError::Json(raw_error));
             }
             decode_ipc_message_value(value)
         }
