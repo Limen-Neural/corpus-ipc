@@ -9,14 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.1] - 2026-10-25
+## [0.2.1] - 2026-10-26
 
 ### Fixed
 
 - Corrected the published `rust-version` from 1.99.0 to 1.85, the floor set
   by edition 2024. The 0.2.0 manifest unintentionally required Rust 1.99.0;
-  that version has been yanked from crates.io. The packaged code is
-  otherwise identical to 0.2.0.
+  that version has been yanked from crates.io. Three call sites that used
+  post-1.85 std APIs are rewritten in equivalent 1.85-compatible forms;
+  the rewrites are MSRV-only, with no intended API or behavior changes —
+  behavior is otherwise identical to 0.2.0.
 
 ## [0.2.0] - 2026-10-26
 
