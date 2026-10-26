@@ -12,7 +12,7 @@ use super::de::{de_opt_session_id, de_valid_mask, de_values, validate_optional_m
 /// Canonical wire batch of continuous, domain-neutral runtime stimulus values.
 ///
 /// This is the typed replacement for consumers' ad-hoc stimulus payloads,
-/// such as an untagged `{"type":"Stimuli","values":[...]}` UDP JSON message or
+/// such as a flat `{"type":"Stimuli","values":[...]}` UDP JSON message or
 /// a private ingress packet struct. `corpus-ipc` owns this schema; consumers
 /// should decode/encode
 /// through [`IpcMessage::Stimuli`](crate::IpcMessage::Stimuli) instead of a private struct or raw
