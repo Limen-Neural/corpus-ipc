@@ -11,17 +11,17 @@ use super::de::{de_opt_session_id, de_valid_mask, de_values, validate_optional_m
 
 /// Canonical wire batch of continuous, domain-neutral runtime stimulus values.
 ///
-/// This is the typed replacement for downstream services' ad-hoc stimulus
-/// payloads — e.g. `thalamic-relay`'s untagged `{"type":"Stimuli","values":[...]}`
-/// UDP JSON, and `brainstem-daemon`'s local `IngressPacket { stimuli, modulators }`
-/// struct. `corpus-ipc` owns this schema; downstream services should decode/encode
+/// This is the typed replacement for consumers' ad-hoc stimulus payloads,
+/// such as an untagged `{"type":"Stimuli","values":[...]}` UDP JSON message or
+/// a private ingress packet struct. `corpus-ipc` owns this schema; consumers
+/// should decode/encode
 /// through [`IpcMessage::Stimuli`](crate::IpcMessage::Stimuli) instead of a private struct or raw
 /// `serde_json::Value` field indexing.
 ///
 /// # Channel width
 ///
 /// `values.len()` is the channel count. It is **not fixed** by this crate —
-/// do not encode any particular network's input width (e.g. Spikenaut's
+/// do not encode any particular network's input width (such as one model's
 /// current axon count) into this type. Consumers determine width at runtime
 /// from the batch itself.
 ///
@@ -33,8 +33,8 @@ use super::de::{de_opt_session_id, de_valid_mask, de_values, validate_optional_m
 /// must **not** be interpreted as a real zero-valued reading. When
 /// `valid_mask` is `None`, every entry in `values` is valid.
 ///
-/// This is a deliberate improvement over ad-hoc formats (e.g. `thalamic-relay`'s
-/// UDP handler) that silently coerce missing or non-numeric channels to `0.0`
+/// This is a deliberate improvement over ad-hoc formats that silently coerce
+/// missing or non-numeric channels to `0.0`
 /// with no way to distinguish "sensor read zero" from "no data this tick."
 ///
 /// Fields are public (matching this crate's other wire batches, e.g.

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-10-24
+## [0.2.0] - 2026-10-26
 
 ### Added
 
@@ -81,9 +81,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- README "Stimulus and neuromodulator ingress" no longer names downstream
-  repositories or draws their pipeline (LIM-1547). Docs only; no API or wire
-  change.
+- README "Stimulus and neuromodulator ingress" and the `StimulusBatch` /
+  `IpcMessage::Stimuli` rustdoc no longer name downstream repositories or a
+  specific network (LIM-1547). Docs only; no API or wire change.
 
 - Minimum supported Rust version is 1.99.0 (0.1.0 required 1.98.1; LIM-1515).
 

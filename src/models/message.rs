@@ -35,8 +35,8 @@ pub enum IpcMessage {
     /// Wire envelope for an IPC [`SpikeBatch`] (not a SynapticDistill training batch).
     Spikes(SpikeBatch),
     Embeddings(EmbeddingBatch),
-    /// Typed continuous runtime stimulus ingress (e.g. `thalamic-relay` ->
-    /// `brainstem-daemon`). See [`StimulusBatch`] for channel-width and
+    /// Typed continuous runtime stimulus ingress from a sensory producer to
+    /// a runtime consumer. See [`StimulusBatch`] for channel-width and
     /// invalid/missing-channel semantics.
     Stimuli(StimulusBatch),
     /// Typed neuromodulator ingress, replacing an unstructured float tail.
