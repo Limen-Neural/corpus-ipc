@@ -46,7 +46,7 @@ pub fn parse_readout_packet(
         )));
     }
     let payload_len = buf.len() - 8;
-    if !payload_len.is_multiple_of(4) {
+    if payload_len % 4 != 0 {
         return Err(BackendError::CommunicationError(format!(
             "ZMQ readout payload misaligned: {payload_len} bytes after header (must be a multiple of 4)"
         )));
