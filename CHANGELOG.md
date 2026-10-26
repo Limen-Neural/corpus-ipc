@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-25
+
+### Fixed
+
+- Corrected the published `rust-version` from 1.99.0 to 1.85, the floor set
+  by edition 2024. The 0.2.0 manifest unintentionally required Rust 1.99.0;
+  that version has been yanked from crates.io. The packaged code is
+  otherwise identical to 0.2.0.
+
 ## [0.2.0] - 2026-10-26
 
 ### Added
@@ -279,7 +288,8 @@ version.** Keep at least one committed fixture for every still-supported
 version, including the unversioned-as-v1 encoding while
   `LEGACY_UNVERSIONED` remains inside the window.
 
-[Unreleased]: https://github.com/Limen-Neural/corpus-ipc/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Limen-Neural/corpus-ipc/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Limen-Neural/corpus-ipc/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Limen-Neural/corpus-ipc/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Limen-Neural/corpus-ipc/releases/tag/v0.1.0
 

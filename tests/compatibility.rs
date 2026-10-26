@@ -359,6 +359,21 @@ fn compatibility_duplicate_wire_version_is_rejected() {
 }
 
 #[test]
+fn compatibility_duplicate_payload_falls_through_to_legacy_decode() {
+    // A duplicate `payload` key fails the raw envelope parse (a Json error),
+    // but the object carries no `wire_version`, so decode must not surface
+    // that raw error: it falls through to legacy value decode, which rejects
+    // the object as a payload error. (Duplicate `wire_version` is the
+    // opposite case: compatibility_duplicate_wire_version_is_rejected.)
+    let bytes = br#"{"payload":"Ping","payload":"Ping"}"#;
+    let err = decode_ipc_message_json(bytes).expect_err("duplicate payload must fail");
+    assert!(
+        matches!(err, EnvelopeError::Payload(_)),
+        "duplicate payload without wire_version is a legacy payload error, not the raw envelope Json error: {err}"
+    );
+}
+
+#[test]
 fn compatibility_null_payload_deserializes_when_t_accepts_null() {
     let bytes = br#"{"wire_version":1,"payload":null}"#;
     let decoded = WireEnvelope::<Option<u32>>::decode_json(bytes).unwrap();

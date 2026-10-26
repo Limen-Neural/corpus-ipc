@@ -111,15 +111,18 @@ fn check_readout_against_layout(data: &[u8], limit: usize) {
         assert!(parsed.is_err(), "short packet accepted");
         return;
     };
-    if !payload.is_multiple_of(4) || payload / 4 > limit {
+    if payload % 4 != 0 || payload / 4 > limit {
         assert!(parsed.is_err(), "misaligned or over-limit packet accepted");
         return;
     }
     let (tick, readout) = parsed.expect("well-formed packet rejected");
     assert_eq!(tick, i64::from_le_bytes(data[..8].try_into().unwrap()));
     assert_eq!(readout.len(), payload / 4);
-    for (value, chunk) in readout.iter().zip(data[8..].as_chunks::<4>().0) {
-        assert_eq!(value.to_bits(), u32::from_le_bytes(*chunk));
+    for (value, chunk) in readout.iter().zip(data[8..].chunks_exact(4)) {
+        assert_eq!(
+            value.to_bits(),
+            u32::from_le_bytes(chunk.try_into().unwrap())
+        );
     }
 }
 
