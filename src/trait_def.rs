@@ -17,7 +17,7 @@ use crate::{BackendError, EmbeddingBatch, GradientBatch, RustBackend, SpikeBatch
 ///
 /// Abstracts over the compute processing layer, allowing different backend
 /// implementations (Rust-native, native or network IPC) to be used
-/// interchangeably. This is the neuromod-aligned contract: every backend
+/// interchangeably. This is the common contract: every backend
 /// (including `ZmqIpcBackend` when the `zmq` feature is enabled)
 /// implements this trait. `ZmqIpcBackend` is `Sync` via mutex-serialized
 /// socket ownership, not by marking the libzmq socket itself `Sync`.

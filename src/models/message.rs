@@ -19,7 +19,7 @@ use super::{
 ///
 /// Variant names (`Spikes`, `EligibilityTraces`, …) are serde identifiers and
 /// must stay stable. The payloads they wrap are IPC transport types, not
-/// SynapticDistill training structs (see the module docs).
+/// in-memory training structs (see the module docs).
 ///
 /// Versioned ingress should go through
 /// [`crate::decode_ipc_message_json`]: that entry point classifies
@@ -32,11 +32,11 @@ use super::{
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum IpcMessage {
     // Input messages
-    /// Wire envelope for an IPC [`SpikeBatch`] (not a SynapticDistill training batch).
+    /// Wire payload for an IPC [`SpikeBatch`] (not an in-memory training batch).
     Spikes(SpikeBatch),
     Embeddings(EmbeddingBatch),
-    /// Typed continuous runtime stimulus ingress (e.g. `thalamic-relay` ->
-    /// `brainstem-daemon`). See [`StimulusBatch`] for channel-width and
+    /// Typed continuous runtime stimulus ingress between a producer and a
+    /// consumer. See [`StimulusBatch`] for channel-width and
     /// invalid/missing-channel semantics.
     Stimuli(StimulusBatch),
     /// Typed neuromodulator ingress, replacing an unstructured float tail.
@@ -47,7 +47,7 @@ pub enum IpcMessage {
 
     // Output messages
     GradientUpdate(GradientBatch),
-    /// Wire envelope for an IPC [`TraceBatch`] (not a SynapticDistill training batch).
+    /// Wire payload for an IPC [`TraceBatch`] (not an in-memory training batch).
     EligibilityTraces(TraceBatch),
     TrainingComplete,
 

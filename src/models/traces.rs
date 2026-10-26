@@ -14,9 +14,8 @@ use super::de::{de_session_id, de_trace_value, de_traces, prefix_path};
 /// This is a **wire-level** payload for [`IpcMessage::EligibilityTraces`](crate::IpcMessage::EligibilityTraces).
 /// Field names and layout are part of the serialized protocol.
 ///
-/// **Not** [`SynapticDistill.jl`](https://github.com/rmems/SynapticDistill.jl)'s
-/// training `TraceBatch` (a single unstructured `traces` field). This type
-/// carries `session_id` / `batch_id` plus typed [`TraceData`] rows. Use
+/// **Not** an in-memory training batch (a single unstructured `traces`
+/// field). This type carries `session_id` / `batch_id` plus typed [`TraceData`] rows. Use
 /// [`IpcTraceBatch`] when the name collision matters.
 ///
 /// Names stay `TraceBatch` so existing Rust imports and serde identifiers
@@ -35,7 +34,7 @@ pub struct TraceBatch {
 /// Explicit IPC-domain name for [`TraceBatch`].
 ///
 /// Same type and same wire format. Prefer this alias in new code that sits
-/// next to SynapticDistill training types.
+/// next to training-side batch types.
 pub type IpcTraceBatch = TraceBatch;
 
 #[derive(Deserialize)]
@@ -79,7 +78,7 @@ impl Validate for TraceBatch {
 
 /// Individual eligibility trace data on the IPC wire.
 ///
-/// An element of an IPC [`TraceBatch`], not a SynapticDistill training trace.
+/// An element of an IPC [`TraceBatch`], not an in-memory training-side trace type.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(try_from = "TraceDataWire")]
 pub struct TraceData {
