@@ -78,7 +78,7 @@ impl Validate for TraceBatch {
 
 /// Individual eligibility trace data on the IPC wire.
 ///
-/// An element of an IPC [`TraceBatch`], not a training trace.
+/// An element of an IPC [`TraceBatch`], not an in-memory training-side trace type.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(try_from = "TraceDataWire")]
 pub struct TraceData {

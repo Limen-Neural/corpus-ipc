@@ -32,7 +32,7 @@ use super::{
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum IpcMessage {
     // Input messages
-    /// Wire envelope for an IPC [`SpikeBatch`] (not an in-memory training batch).
+    /// Wire payload for an IPC [`SpikeBatch`] (not an in-memory training batch).
     Spikes(SpikeBatch),
     Embeddings(EmbeddingBatch),
     /// Typed continuous runtime stimulus ingress between a producer and a
@@ -47,7 +47,7 @@ pub enum IpcMessage {
 
     // Output messages
     GradientUpdate(GradientBatch),
-    /// Wire envelope for an IPC [`TraceBatch`] (not an in-memory training batch).
+    /// Wire payload for an IPC [`TraceBatch`] (not an in-memory training batch).
     EligibilityTraces(TraceBatch),
     TrainingComplete,
 
