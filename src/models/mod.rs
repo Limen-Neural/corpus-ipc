@@ -8,20 +8,20 @@
 //! payloads**. They are owned by `corpus-ipc` and serialized on the hybrid-flow
 //! message bus (`IpcMessage::Spikes`, `IpcMessage::EligibilityTraces`).
 //!
-//! They are **not** the same types as `SpikeBatch` / `TraceBatch` in
-//! [`SynapticDistill.jl`](https://github.com/rmems/SynapticDistill.jl)
-//! (`src/types.jl`). Those are **training-facing** in-memory batches:
+//! They are **not** in-memory training batches (spike-train arrays with
+//! optional `times` / `targets`, or unstructured e-prop `traces`) that other
+//! libraries may also call `SpikeBatch` / `TraceBatch`:
 //!
-//! | | `corpus-ipc` (this crate) | `SynapticDistill.jl` |
-//! |---|---------------------------|----------------------|
-//! | Domain | IPC wire / session routing | SNN training step |
-//! | `SpikeBatch` | `session_id`, `batch_id`, timestamped [`SpikeEvent`]s | spike trains (`spikes`), optional `times` / `targets` |
-//! | `TraceBatch` | `session_id`, `batch_id`, typed [`TraceData`] rows | unstructured `traces` for e-prop / credit assignment |
+//! | | `corpus-ipc` (this crate) |
+//! |---|---------------------------|
+//! | Domain | IPC wire / session routing |
+//! | `SpikeBatch` | `session_id`, `batch_id`, timestamped [`SpikeEvent`]s |
+//! | `TraceBatch` | `session_id`, `batch_id`, typed [`TraceData`] rows |
 //!
 //! Keep the Rust names `SpikeBatch` / `TraceBatch` so serde identifiers and
 //! existing imports stay stable. Prefer [`IpcSpikeBatch`] / [`IpcTraceBatch`]
-//! when the cross-repo collision would otherwise be unclear. Do not merge the
-//! IPC and training definitions.
+//! when the name collision would otherwise be unclear. Do not merge the IPC
+//! and training definitions.
 
 mod config;
 mod de;

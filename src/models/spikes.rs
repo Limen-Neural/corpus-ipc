@@ -17,10 +17,9 @@ use super::de::{
 /// and layout are part of the serialized protocol and must not be changed
 /// casually.
 ///
-/// **Not** [`SynapticDistill.jl`](https://github.com/rmems/SynapticDistill.jl)'s
-/// training `SpikeBatch` (`spikes` / `times` / `targets`). That type is an
-/// in-memory training batch; this type is a session-correlated list of
-/// [`SpikeEvent`]s. Use [`IpcSpikeBatch`] when the name collision matters.
+/// **Not** an in-memory training batch of spike trains (`spikes` / `times` /
+/// `targets`); this type is a session-correlated list of [`SpikeEvent`]s.
+/// Use [`IpcSpikeBatch`] when the name collision matters.
 ///
 /// Names stay `SpikeBatch` so existing Rust imports and serde identifiers
 /// remain compatible (RM-324 / #7).
@@ -82,12 +81,12 @@ impl Validate for SpikeBatch {
 /// Explicit IPC-domain name for [`SpikeBatch`].
 ///
 /// Same type and same wire format. Prefer this alias in new code that sits
-/// next to SynapticDistill training types.
+/// next to training-side batch types.
 pub type IpcSpikeBatch = SpikeBatch;
 
 /// Individual spike event with channel, timing, and strength.
 ///
-/// An element of an IPC [`SpikeBatch`], not a SynapticDistill training row.
+/// An element of an IPC [`SpikeBatch`], not a training row.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(try_from = "SpikeEventWire")]
 pub struct SpikeEvent {

@@ -224,14 +224,9 @@ use corpus_ipc::{IpcMessage, SpikeBatch, EmbeddingBatch};
 
 ### `SpikeBatch` / `TraceBatch` are IPC transport types
 
-These names are **wire payloads**, not the training-side types in
-[`SynapticDistill.jl`](https://github.com/rmems/SynapticDistill.jl)
-(`src/types.jl`).
-
-| Crate | Domain | `SpikeBatch` | `TraceBatch` |
-| --- | --- | --- | --- |
-| `corpus-ipc` | IPC transport | session/batch id + `SpikeEvent` list | session/batch id + `TraceData` rows |
-| `SynapticDistill.jl` | SNN training | spike trains + optional `times` / `targets` | unstructured e-prop `traces` |
+These names are **wire payloads** (a session/batch id plus typed
+`SpikeEvent` or `TraceData` rows), not in-memory training batches such as
+spike-train arrays or unstructured e-prop traces.
 
 The Rust type names stay `SpikeBatch` / `TraceBatch` so serde identifiers
 (`IpcMessage::Spikes`, `IpcMessage::EligibilityTraces`) and existing imports
@@ -320,9 +315,6 @@ Canonical GitHub home: **[Limen-Neural/corpus-ipc](https://github.com/Limen-Neur
 The [GitHub wiki](https://github.com/Limen-Neural/corpus-ipc/wiki) is **enabled**
 and is the extra-docs home (architecture, backends, REST server, ecosystem).
 In-tree [`docs/`](docs/) is a pointer only — not a second documentation site.
-
-Links to [`SynapticDistill.jl`](https://github.com/rmems/SynapticDistill.jl)
-stay on `rmems`; that sibling has not transferred.
 
 ## License
 

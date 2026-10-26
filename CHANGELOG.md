@@ -81,9 +81,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- README "Stimulus and neuromodulator ingress" and the `StimulusBatch` /
-  `IpcMessage::Stimuli` rustdoc no longer name downstream repositories or a
-  specific network (LIM-1547). Docs only; no API or wire change.
+- README and rustdoc no longer name sibling repositories or a specific network
+  (the stimulus ingress docs, the `SpikeBatch` / `TraceBatch` collision notes,
+  and the `IpcBackend` trait docs; LIM-1547). The `IpcSpikeBatch` /
+  `IpcTraceBatch` aliases and their collision guidance stay. Docs only; no API
+  or wire change.
 
 - Minimum supported Rust version is 1.99.0 (0.1.0 required 1.98.1; LIM-1515).
 
