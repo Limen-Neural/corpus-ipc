@@ -556,7 +556,7 @@ mod tests {
     }
 
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     use super::*;
     use crate::zmq_context::shared_context;
@@ -922,21 +922,51 @@ mod tests {
     #[test]
     fn receive_drain_bound_returns_under_sustained_publish_load() {
         let (publisher, mut backend) = connected_pub_sub();
-        let flooder = std::thread::spawn(move || {
-            for tick in 2..=512i64 {
-                let _ = publisher.send(make_packet(tick, &[tick as f32]), zmq::DONTWAIT);
+        // Keep publishing until the backend has observed a flooded frame, so
+        // the assertion does not depend on how many frames a loaded host
+        // delivers inside a fixed sleep. Every drain, not just one, must
+        // return promptly while the load is sustained.
+        let running = Arc::new(AtomicBool::new(true));
+        let flooder = {
+            let running = Arc::clone(&running);
+            std::thread::spawn(move || {
+                let mut tick = 2i64;
+                while running.load(Ordering::Relaxed) {
+                    let _ = publisher.send(make_packet(tick, &[tick as f32]), zmq::DONTWAIT);
+                    tick += 1;
+                    std::thread::yield_now();
+                }
+            })
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut worst = Duration::ZERO;
+        let mut output = Vec::new();
+        // The warm-up leaves tick-1 duplicates that count as skipped, so
+        // measure the backlog only from the first flooded frame onward: a
+        // later drain must supersede valid frames to prove it faced a queue.
+        let mut skipped_at_flood: Option<u64> = None;
+        let mut backlog_drained = false;
+        while !backlog_drained && Instant::now() < deadline {
+            let started = Instant::now();
+            output = backend.process_batch(&[]).unwrap();
+            worst = worst.max(started.elapsed());
+            if backend.tick() > 1 {
+                let baseline = *skipped_at_flood.get_or_insert(backend.skipped_readouts());
+                backlog_drained = backend.skipped_readouts() > baseline;
             }
-        });
-        std::thread::sleep(Duration::from_millis(10));
-        let started = Instant::now();
-        let output = backend.process_batch(&[]).unwrap();
-        let elapsed = started.elapsed();
+            std::thread::sleep(Duration::from_micros(200));
+        }
+        running.store(false, Ordering::Relaxed);
         flooder.join().expect("flooder panicked");
         assert!(
-            elapsed < Duration::from_millis(100),
+            worst < Duration::from_millis(100),
             "bounded drain must return promptly under sustained publish load"
         );
-        assert!(backend.tick() > 1);
+        assert!(
+            backlog_drained,
+            "no drain faced a backlog of flooded frames"
+        );
+        assert!(backend.tick() > 1, "no flooded frame was observed");
         assert_eq!(output[0], backend.tick() as f32);
     }
 

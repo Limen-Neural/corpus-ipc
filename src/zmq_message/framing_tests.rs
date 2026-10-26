@@ -18,6 +18,20 @@ fn publisher_rejects_invalid_payloads_without_sending() {
     let publisher = ZmqMessagePublisher::bind(ZmqTransportConfig::new(&endpoint)).unwrap();
     let subscriber = ZmqMessageSubscriber::connect(ZmqTransportConfig::new(&endpoint)).unwrap();
     expect_message(&publisher, &subscriber, &IpcMessage::Ping);
+    // `expect_message` resends until it sees the message, so duplicates may
+    // still be in flight or queued. PUB/SUB keeps order on one connection:
+    // send a sentinel once and drain up to it, so every earlier duplicate has
+    // been consumed before silence is asserted.
+    let sentinel = IpcMessage::Loss(2.0);
+    publisher.send(&sentinel).unwrap();
+    spin_until(
+        || {
+            progress(subscriber.try_recv(), idle_message)
+                .unwrap_or_else(|err| panic!("{err}"))
+                .is_some_and(|got| got == sentinel)
+        },
+        "the ordering sentinel",
+    );
 
     let invalid = IpcMessage::Stimuli(StimulusBatch {
         session_id: None,
