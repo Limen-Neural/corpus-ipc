@@ -14,7 +14,7 @@
 name = "ap-check"
 version = "0.0.0"
 edition = "2024"
-rust-version = "1.99.0"
+rust-version = "1.85"
 publish = false
 license = "MIT OR Apache-2.0"
 

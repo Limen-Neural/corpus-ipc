@@ -50,6 +50,11 @@ This document is repository-owned and intentionally stays **out of** the
   the crate-count and package-list evidence needs no bypass and is unaffected by
   the toolchain mismatch.
 
+> Note (2026-11): `rust-version` is now the true measured MSRV (**1.85**), while
+> the dev/CI pin stays at **1.99.0** (`rust-toolchain.toml`); the `msrv` CI job
+> covers the lower floor. The 1.92.0-vs-1.99.0 caveat above still applies to
+> these timings.
+
 ## Dependency-graph contributors (per feature path)
 
 Unique crate counts from `cargo tree` (normal edges only), deduplicated by

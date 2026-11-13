@@ -64,10 +64,12 @@
 #   real cargo/cc-rs error and points at this workaround; it is never auto-skipped.
 #
 # MSRV note:
-#   The crate pins rust-version = 1.99.0 and CI installs exactly that toolchain.
-#   This script targets a correct (>= MSRV) toolchain and never bakes in
-#   `--ignore-rust-version`. On a runner whose rustc is older than the MSRV,
-#   cargo will refuse the build/check/clippy/test phases by design.
+#   The crate's advertised MSRV is package.rust-version in Cargo.toml (1.85);
+#   the dev/CI toolchain pin is 1.99.0 (rust-toolchain.toml). The dedicated CI
+#   `msrv` job checks the library on rust-version; this script targets a
+#   correct (>= MSRV) toolchain and never bakes in `--ignore-rust-version`.
+#   On a runner whose rustc is older than the MSRV, cargo will refuse the
+#   build/check/clippy/test phases by design.
 
 # -E (errtrace) makes the ERR trap fire inside functions too, so a cargo failure
 # in run_fast / run_full reports the failing phase instead of exiting silently.
