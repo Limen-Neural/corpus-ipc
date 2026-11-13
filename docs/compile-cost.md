@@ -28,7 +28,8 @@ This document is repository-owned and intentionally stays **out of** the
 
 ### Toolchain caveat (read this before using any number)
 
-- The crate pins `rust-version = "1.99.0"` (MSRV) in `Cargo.toml`. This sandbox
+- At measurement time the crate pinned `rust-version = "1.99.0"` (then treated
+  as the MSRV) in `Cargo.toml`. This sandbox
   ships **cargo/rustc 1.92.0**, which is numerically **older** than that MSRV.
   Cargo therefore **refuses** a plain build:
 

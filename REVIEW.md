@@ -25,6 +25,8 @@ Notes:
 
 - The `zmq` feature builds vendored libzmq from C++ and is not covered by the
   `msrv` job; it stays in the `validate` job on the dev pin.
+- `fuzz.yml` is exempt from the 1.99.0 dev-pin rule: it intentionally stays on
+  its `nightly-2026-10-19` pin for libFuzzer.
 - `cargo test --all-targets` additionally requires dev-dependencies
   (`proptest` 1.12 needs rustc 1.88), so the test suite floor is higher than
   the library MSRV. Run tests on the dev pin (1.99.0), not on `rust-version`.

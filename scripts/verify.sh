@@ -12,10 +12,13 @@
 # Two clearly separated modes:
 #
 #   fast  (default)  Per-feature checks that need NO C++ toolchain. Cheap enough
-#                    to run on every change: default + server `cargo check`, plus
-#                    the dependency-boundary assertion that the default graph
-#                    excludes axum/tokio/tower/zmq. Mirrors the `validate` job's
-#                    fast per-feature checks.
+#                    to run on every change: default + server `cargo check`, the
+#                    MSRV `cargo +rust-version check` pair mirroring the CI
+#                    `msrv` job (needs python3 to read Cargo.toml and a rustup
+#                    toolchain for the declared rust-version), plus the
+#                    dependency-boundary assertion that the default graph
+#                    excludes axum/tokio/tower/zmq. Mirrors the `validate` and
+#                    `msrv` jobs' fast per-feature checks.
 #   full             Everything in `release-qualification`: adds a discrete
 #                    `cargo check --features zmq` (matching the `validate` job's
 #                    standalone zmq check), then all-targets / all-features
@@ -65,11 +68,13 @@
 #
 # MSRV note:
 #   The crate's advertised MSRV is package.rust-version in Cargo.toml (1.85);
-#   the dev/CI toolchain pin is 1.99.0 (rust-toolchain.toml). The dedicated CI
-#   `msrv` job checks the library on rust-version; this script targets a
-#   correct (>= MSRV) toolchain and never bakes in `--ignore-rust-version`.
-#   On a runner whose rustc is older than the MSRV, cargo will refuse the
-#   build/check/clippy/test phases by design.
+#   the dev/CI toolchain pin is 1.99.0 (rust-toolchain.toml). Both modes run
+#   the same `cargo +$MSRV check --locked --lib` (+ `--features server`)
+#   pair as the CI `msrv` job. `cargo +$MSRV` resolves through rustup, which
+#   installs the toolchain on demand; this script never bakes in
+#   `--ignore-rust-version`. On a runner whose rustc is older than the MSRV,
+#   the non-+ cargo phases will refuse the build/check/clippy/test phases by
+#   design.
 
 # -E (errtrace) makes the ERR trap fire inside functions too, so a cargo failure
 # in run_fast / run_full reports the failing phase instead of exiting silently.
@@ -104,6 +109,8 @@ Modes:
            cargo check --no-default-features --locked
            cargo check --features server --locked
            dependency-boundary assertion (default tree excludes axum/tokio/tower/zmq)
+           cargo +rust-version check --locked --lib (+ --features server),
+             mirroring the CI `msrv` job (needs python3 + rustup)
   full   Adds the full release/CI qualification (needs a C++ compiler for
          zmq / --all-features):
            cargo check --features zmq --locked
@@ -244,16 +251,54 @@ assert_default_tree_boundary() {
     echo "boundary holds: default graph excludes axum/tokio/tower/zmq"
 }
 
+# --- MSRV checks (mirror the CI `msrv` job) -------------------------------
+# Reads package.rust-version from Cargo.toml via tomllib (same source of truth
+# as ci.yml) and checks the library on that toolchain. `cargo +$MSRV` resolves
+# through rustup; a missing python3 or toolchain fails loudly, never skips.
+
+MSRV=""
+
+read_msrv() {
+    local py
+    py=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
+    if [[ -z "$py" ]]; then
+        echo "error: the msrv phase needs python3 to read package.rust-version from Cargo.toml" >&2
+        return 1
+    fi
+    "$py" - <<'PY'
+import sys
+import tomllib
+
+with open("Cargo.toml", "rb") as fh:
+    rv = tomllib.load(fh)["package"]["rust-version"]
+if not isinstance(rv, str):
+    sys.exit("error: package.rust-version must be a string")
+print(rv)
+PY
+}
+
+# Call after MSRV is set (read_msrv at the top of run_fast/run_full). Failures
+# inside `cargo +$MSRV` are reported by the ERR trap like every other phase.
+run_msrv_checks() {
+    banner "cargo +$MSRV check --locked --lib (MSRV)"
+    cargo "+$MSRV" check --locked --lib
+
+    banner "cargo +$MSRV check --locked --lib --features server (MSRV)"
+    cargo "+$MSRV" check --locked --lib --features server
+}
+
 # --- fast mode -------------------------------------------------------------
 
 run_fast() {
+    MSRV=$(read_msrv) || exit 1
+
     # Phase count depends on whether fmt runs.
     if [[ "$RUN_FMT" -eq 1 ]]; then
-        PHASE_TOTAL=4
+        PHASE_TOTAL=6
         banner "cargo fmt --check"
         cargo fmt --check
     else
-        PHASE_TOTAL=3
+        PHASE_TOTAL=5
     fi
 
     banner "cargo check --no-default-features --locked"
@@ -264,6 +309,8 @@ run_fast() {
 
     banner "dependency-boundary assertion (cargo tree --no-default-features --edges normal --locked)"
     assert_default_tree_boundary
+
+    run_msrv_checks
 }
 
 # --- full mode -------------------------------------------------------------
@@ -276,15 +323,17 @@ if [[ -n "$JOBS" ]]; then
 fi
 
 run_full() {
+    MSRV=$(read_msrv) || exit 1
+
     # Order: fast per-feature checks first (cheap, no C++), then the heavy
     # all-features qualification, then package/publish --dry-run ONCE at the end.
     # No `cargo clean` anywhere: artifacts are reused across phases.
     if [[ "$RUN_FMT" -eq 1 ]]; then
-        PHASE_TOTAL=13
+        PHASE_TOTAL=15
         banner "cargo fmt --check"
         cargo fmt --check
     else
-        PHASE_TOTAL=12
+        PHASE_TOTAL=14
     fi
 
     banner "cargo check --no-default-features --locked"
@@ -301,6 +350,9 @@ run_full() {
 
     banner "dependency-boundary assertion (cargo tree --no-default-features --edges normal --locked)"
     assert_default_tree_boundary
+
+    # MSRV pair, mirroring the CI `msrv` job (C++-free: lib + server only).
+    run_msrv_checks
 
     # Heavy phases below compile vendored ZeroMQ (C++). Opt-in jobs cap applies.
     banner "cargo clippy --all-targets --all-features --locked -- -D warnings"

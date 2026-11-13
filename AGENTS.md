@@ -14,9 +14,12 @@ Two modes:
 - `scripts/verify.sh` or `scripts/verify.sh --mode fast` (default) — fast dev
   checks, **no C++ toolchain required**: `cargo fmt --check` (skip with
   `--no-fmt`), `cargo check --no-default-features --locked`, `cargo check
-  --features server --locked`, and the dependency-boundary assertion that the
+  --features server --locked`, the dependency-boundary assertion that the
   default `cargo tree --no-default-features --edges normal` graph excludes
-  `axum`/`tokio`/`tower`/`zmq`. Cheap enough to run on every change.
+  `axum`/`tokio`/`tower`/`zmq`, and the MSRV pair `cargo
+  +rust-version check --locked --lib` (+ `--features server`) mirroring the CI
+  `msrv` job (needs python3 to read `Cargo.toml` and a rustup toolchain for the
+  declared `rust-version`). Cheap enough to run on every change.
 - `scripts/verify.sh --mode full` — adds the complete release/CI qualification
   and **needs a working C++ compiler** (the `zmq` / `--all-features` paths
   compile vendored ZeroMQ from C++ via `zmq-sys`): a discrete `cargo check

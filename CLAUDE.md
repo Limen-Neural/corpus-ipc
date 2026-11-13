@@ -33,8 +33,10 @@ scripts/verify.sh --mode full --jobs 4         # opt-in Cargo jobs cap (heavy al
 ```
 
 Fast mode = `cargo fmt --check`, `cargo check --no-default-features`, `cargo
-check --features server`, and the boundary assertion that the default tree
-excludes axum/tokio/tower/zmq. Full mode adds a discrete `cargo check --features
+check --features server`, the boundary assertion that the default tree
+excludes axum/tokio/tower/zmq, and the MSRV pair `cargo +rust-version check
+--locked --lib` (+ `--features server`) mirroring the CI `msrv` job (needs
+python3 + rustup). Full mode adds a discrete `cargo check --features
 zmq` (mirroring the CI `validate` job's standalone zmq check; needs C++),
 all-targets/all-features clippy, `cargo test --all-features`, `cargo test -p
 ap-check`, rustdoc `-D warnings`, and `cargo package` / `cargo publish
