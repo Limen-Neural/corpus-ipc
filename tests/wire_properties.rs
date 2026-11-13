@@ -310,10 +310,8 @@ proptest! {
         let IpcMessage::ConfigUpdate(payload) = decoded else {
             return Err(TestCaseError::fail("expected ConfigUpdate"));
         };
-        prop_assert_eq!(
-            payload.config.get("k"),
-            Some(&ConfigValue::Float(i as f32))
-        );
+        let expected = ConfigValue::Float(i as f32);
+        prop_assert_eq!(payload.config.get("k"), Some(&expected));
     }
 
     /// Unknown fields on the envelope object and inside struct payloads are

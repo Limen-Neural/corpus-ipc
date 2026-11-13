@@ -28,7 +28,8 @@ This document is repository-owned and intentionally stays **out of** the
 
 ### Toolchain caveat (read this before using any number)
 
-- The crate pins `rust-version = "1.99.0"` (MSRV) in `Cargo.toml`. This sandbox
+- At measurement time the crate pinned `rust-version = "1.99.0"` (then treated
+  as the MSRV) in `Cargo.toml`. This sandbox
   ships **cargo/rustc 1.92.0**, which is numerically **older** than that MSRV.
   Cargo therefore **refuses** a plain build:
 
@@ -49,6 +50,11 @@ This document is repository-owned and intentionally stays **out of** the
 - `cargo tree` and `cargo package --list` do **not** enforce `rust-version`, so
   the crate-count and package-list evidence needs no bypass and is unaffected by
   the toolchain mismatch.
+
+> Note (2026-11): `rust-version` is now the true measured MSRV (**1.85**), while
+> the dev/CI pin stays at **1.99.0** (`rust-toolchain.toml`); the `msrv` CI job
+> covers the lower floor. The 1.92.0-vs-1.99.0 caveat above still applies to
+> these timings.
 
 ## Dependency-graph contributors (per feature path)
 

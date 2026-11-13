@@ -96,6 +96,41 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo test -p ap-check
 
+  # The advertised MSRV is `package.rust-version` in Cargo.toml (true minimum,
+  # currently 1.85); the dev/CI pin is 1.99.0 via rust-toolchain.toml and the
+  # toolchain installs above. This job installs whatever rust-version declares
+  # and checks the library surface on it. `zmq` is intentionally not covered:
+  # it builds vendored libzmq from C++ and stays in `validate`.
+  msrv:
+    name: MSRV (Cargo.toml rust-version)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+        with:
+          persist-credentials: false
+
+      - name: Read rust-version from Cargo.toml
+        run: |
+          set -euo pipefail
+          msrv=$(python3 -c 'import sys; sys.exit("python3 >= 3.11 is required (tomllib)") if sys.version_info < (3, 11) else None; import tomllib; rv = tomllib.load(open("Cargo.toml", "rb"))["package"]["rust-version"]; print(rv) if isinstance(rv, str) else sys.exit("package.rust-version must be a string")')
+          if [ -z "$msrv" ]; then
+            echo "no package.rust-version found in Cargo.toml" >&2
+            exit 1
+          fi
+          echo "MSRV=$msrv" >> "$GITHUB_ENV"
+          echo "rust-version = $msrv"
+
+      - name: Install MSRV toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ env.MSRV }}
+
+      - name: Check library on MSRV
+        run: cargo +"$MSRV" check --locked --lib
+
+      - name: Check library + server feature on MSRV
+        run: cargo +"$MSRV" check --locked --lib --features server
+
   release-qualification:
     name: Release qualification (public artifact)
     runs-on: ubuntu-latest

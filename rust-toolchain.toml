@@ -1,0 +1,7 @@
+# Dev/CI toolchain pin. This is NOT the crate MSRV: the advertised minimum
+# supported Rust version lives in `package.rust-version` in Cargo.toml (1.85)
+# and is exercised by the dedicated `msrv` job in .github/workflows/ci.yml.
+# Per the MSRV policy (Limen-Neural/neuromod#214), rust-version <= this pin.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
