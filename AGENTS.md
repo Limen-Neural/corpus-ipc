@@ -17,9 +17,10 @@ Two modes:
   --features server --locked`, the dependency-boundary assertion that the
   default `cargo tree --no-default-features --edges normal` graph excludes
   `axum`/`tokio`/`tower`/`zmq`, and the MSRV pair `cargo
-  +rust-version check --locked --lib` (+ `--features server`) mirroring the CI
-  `msrv` job (needs python3 to read `Cargo.toml` and a rustup toolchain for the
-  declared `rust-version`). Cheap enough to run on every change.
+  +<rust-version> check --locked --lib` (+ `--features server`) mirroring the
+  CI `msrv` job (`<rust-version>` is the value read from `Cargo.toml`; needs
+  python3 >= 3.11 and rustup, which auto-installs the toolchain). Cheap enough
+  to run on every change.
 - `scripts/verify.sh --mode full` — adds the complete release/CI qualification
   and **needs a working C++ compiler** (the `zmq` / `--all-features` paths
   compile vendored ZeroMQ from C++ via `zmq-sys`): a discrete `cargo check

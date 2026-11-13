@@ -112,7 +112,7 @@ jobs:
       - name: Read rust-version from Cargo.toml
         run: |
           set -euo pipefail
-          msrv=$(python3 -c 'import sys, tomllib; rv = tomllib.load(open("Cargo.toml", "rb"))["package"]["rust-version"]; print(rv) if isinstance(rv, str) else sys.exit("package.rust-version must be a string")')
+          msrv=$(python3 -c 'import sys; sys.exit("python3 >= 3.11 is required (tomllib)") if sys.version_info < (3, 11) else None; import tomllib; rv = tomllib.load(open("Cargo.toml", "rb"))["package"]["rust-version"]; print(rv) if isinstance(rv, str) else sys.exit("package.rust-version must be a string")')
           if [ -z "$msrv" ]; then
             echo "no package.rust-version found in Cargo.toml" >&2
             exit 1

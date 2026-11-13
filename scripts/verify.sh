@@ -13,9 +13,9 @@
 #
 #   fast  (default)  Per-feature checks that need NO C++ toolchain. Cheap enough
 #                    to run on every change: default + server `cargo check`, the
-#                    MSRV `cargo +rust-version check` pair mirroring the CI
-#                    `msrv` job (needs python3 to read Cargo.toml and a rustup
-#                    toolchain for the declared rust-version), plus the
+#                    MSRV `cargo +<rust-version> check` pair mirroring the CI
+#                    `msrv` job (needs python3 >= 3.11 to read Cargo.toml and
+#                    rustup, which auto-installs the declared toolchain), plus the
 #                    dependency-boundary assertion that the default graph
 #                    excludes axum/tokio/tower/zmq. Mirrors the `validate` and
 #                    `msrv` jobs' fast per-feature checks.
@@ -109,8 +109,8 @@ Modes:
            cargo check --no-default-features --locked
            cargo check --features server --locked
            dependency-boundary assertion (default tree excludes axum/tokio/tower/zmq)
-           cargo +rust-version check --locked --lib (+ --features server),
-             mirroring the CI `msrv` job (needs python3 + rustup)
+           cargo +<rust-version> check --locked --lib (+ --features server),
+             mirroring the CI `msrv` job (needs python3 >= 3.11 + rustup)
   full   Adds the full release/CI qualification (needs a C++ compiler for
          zmq / --all-features):
            cargo check --features zmq --locked
@@ -267,6 +267,10 @@ read_msrv() {
     fi
     "$py" - <<'PY'
 import sys
+
+if sys.version_info < (3, 11):
+    sys.exit("error: python3 >= 3.11 is required (tomllib)")
+
 import tomllib
 
 with open("Cargo.toml", "rb") as fh:
